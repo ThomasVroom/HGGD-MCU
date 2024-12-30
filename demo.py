@@ -1,5 +1,4 @@
 import argparse
-import os
 import random
 from time import time
 
@@ -16,18 +15,19 @@ from dataset.evaluation import (anchor_output_process, collision_detect,
 from dataset.pc_dataset_tools import data_process, feature_fusion
 from models.anchornet import AnchorGraspNet
 from models.localgraspnet import PointMultiGraspNet
-from train_utils import *
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint-path', default=None)
+parser.add_argument('--checkpoint-path', default='realsense_checkpoint')
 
 # image input
-parser.add_argument('--rgb-path')
-parser.add_argument('--depth-path')
+parser.add_argument('--rgb-path', default='images/demo_rgb.png')
+parser.add_argument('--depth-path', default='images/demo_depth.png')
 
 # 2d
-parser.add_argument('--input-h', type=int)
-parser.add_argument('--input-w', type=int)
+IMG_H = 720
+IMG_W = 1280
+parser.add_argument('--input-h', type=int, default=IMG_H // 2)
+parser.add_argument('--input-w', type=int, default=IMG_W // 2)
 parser.add_argument('--sigma', type=int, default=10)
 parser.add_argument('--use-depth', type=int, default=1)
 parser.add_argument('--use-rgb', type=int, default=1)
@@ -38,10 +38,10 @@ parser.add_argument('--anchor-z', type=float, default=20.0)
 parser.add_argument('--grid-size', type=int, default=8)
 
 # pc
-parser.add_argument('--anchor-num', type=int)
-parser.add_argument('--all-points-num', type=int)
-parser.add_argument('--center-num', type=int)
-parser.add_argument('--group-num', type=int)
+parser.add_argument('--anchor-num', type=int, default=7)
+parser.add_argument('--all-points-num', type=int, default=25600)
+parser.add_argument('--center-num', type=int, default=48)
+parser.add_argument('--group-num', type=int, default=512)
 
 # grasp detection
 parser.add_argument('--heatmap-thres', type=float, default=0.01)
@@ -50,10 +50,9 @@ parser.add_argument('--local-thres', type=float, default=0.01)
 parser.add_argument('--rotation-num', type=int, default=1)
 
 # others
-parser.add_argument('--random-seed', type=int, default=123, help='Random seed')
+parser.add_argument('--random-seed', type=int, default=1)
 
 args = parser.parse_args()
-
 
 class PointCloudHelper:
 
@@ -66,7 +65,7 @@ class PointCloudHelper:
         fx, fy = intrinsics[0, 0], intrinsics[1, 1]
         cx, cy = intrinsics[0, 2], intrinsics[1, 2]
         # cal x, y
-        ymap, xmap = np.meshgrid(np.arange(720), np.arange(1280))
+        ymap, xmap = np.meshgrid(np.arange(IMG_H), np.arange(IMG_W))
         points_x = (xmap - cx) / fx
         points_y = (ymap - cy) / fy
         self.points_x = torch.from_numpy(points_x).float()
@@ -74,7 +73,7 @@ class PointCloudHelper:
         # for get downsampled xyz map
         ymap, xmap = np.meshgrid(np.arange(self.output_shape[1]),
                                  np.arange(self.output_shape[0]))
-        factor = 1280 / self.output_shape[0]
+        factor = IMG_W / self.output_shape[0]
         points_x = (xmap - cx / factor) / (fx / factor)
         points_y = (ymap - cy / factor) / (fy / factor)
         self.points_x_downscale = torch.from_numpy(points_x).float()
@@ -283,7 +282,6 @@ if __name__ == '__main__':
     anchors = {'gamma': basic_anchors, 'beta': basic_anchors}
     anchors['gamma'] = check_point['gamma']
     anchors['beta'] = check_point['beta']
-    logging.info('Using saved anchors')
     print('-> loaded checkpoint %s ' % (args.checkpoint_path))
 
     # network eval mode
@@ -309,7 +307,7 @@ if __name__ == '__main__':
     # pre-process
     rgb = F.interpolate(ori_rgb, (args.input_w, args.input_h))
     depth = F.interpolate(ori_depth[None], (args.input_w, args.input_h))[0]
-    depth = depth / 1000.0
+    depth = depth / 1000.0 # 10000 instead?
     depth = torch.clip((depth - depth.mean()), -1, 1)
     # generate 2d input
     x = torch.concat([depth[None], rgb], 1)
@@ -322,6 +320,8 @@ if __name__ == '__main__':
                         ori_depth,
                         vis_heatmap=True,
                         vis_grasp=True)
+
+    exit()
 
     # time test
     start = time()

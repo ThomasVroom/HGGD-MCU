@@ -1,3 +1,18 @@
+### Notes
+I am running with:
+- Windows 10
+- Python 3.9.13
+- CUDA 12.2
+- GCC 8.3.0
+
+1. Make sure you have python, cuda, and gcc installed.
+2. Install the checkpoint as described in the README below.
+3. Create a virtual environment.
+4. Run `install.bat` in the venv (this might take 10-15 minutes).
+5. Run `demo.py`.
+
+--------------------------------------------
+
 <h2 align="center">
   <b>Efficient Heatmap-Guided 6-Dof Grasp Detection in Cluttered Scenes</b>
 
