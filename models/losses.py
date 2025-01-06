@@ -10,6 +10,7 @@ from dataset.utils import angle_distance, rotation_distance
 
 eps = 1e-6
 
+gpu = torch.cuda.is_available()
 
 def focal_loss(pred,
                targets,
@@ -94,10 +95,10 @@ def compute_multicls_loss(pred,
     # get multi labels
     multi_labels = torch.zeros((center_num, anchor_num**2),
                                dtype=torch.float32,
-                               device='cuda')
+                               device='cuda' if gpu else 'cpu')
     offset_labels = torch.zeros((center_num, anchor_num**2, 3),
                                 dtype=torch.float32,
-                                device='cuda')
+                                device='cuda' if gpu else 'cpu')
     # get q anchors
     anchors_gamma = anchors['gamma'] * torch.pi / 2
     anchors_beta = anchors['beta'] * torch.pi / 2
@@ -120,9 +121,9 @@ def compute_multicls_loss(pred,
         anchor_eulers.numpy().astype(np.float64), thetas, label_eulers,
         label_offsets)
     # to cuda
-    multi_labels = torch.from_numpy(multi_labels).to(device='cuda',
+    multi_labels = torch.from_numpy(multi_labels).to(device='cuda' if gpu else 'cpu',
                                                      dtype=torch.float32)
-    offset_labels = torch.from_numpy(offset_labels).to(device='cuda',
+    offset_labels = torch.from_numpy(offset_labels).to(device='cuda' if gpu else 'cpu',
                                                        dtype=torch.float32)
     # compute focal loss for anchor
     loss_multi = focal_loss(pred, multi_labels, thres=label_thres)

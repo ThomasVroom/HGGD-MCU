@@ -6,6 +6,7 @@ import open3d as o3d
 import torch
 from torch.utils.dlpack import to_dlpack
 
+gpu = torch.cuda.is_available()
 
 class ModelFreeCollisionDetector():
 
@@ -47,22 +48,22 @@ class ModelFreeCollisionDetector():
 
     def detect(self, grasp_group, approach_dist=0.05):
         T = torch.from_numpy(grasp_group.translations).to(dtype=torch.float16,
-                                                          device='cuda')
+                                                          device='cuda' if gpu else 'cpu')
         R = torch.from_numpy(grasp_group.rotations.reshape(-1, 3, 3)).to(
-            dtype=torch.float16, device='cuda')
+            dtype=torch.float16, device='cuda' if gpu else 'cpu')
         heights = torch.full((grasp_group.size, 1),
                              self.height,
                              dtype=torch.float16,
-                             device='cuda')
+                             device='cuda' if gpu else 'cpu')
         depths = torch.full((grasp_group.size, 1),
                             self.depth,
                             dtype=torch.float16,
-                            device='cuda')
+                            device='cuda' if gpu else 'cpu')
         widths = torch.from_numpy(grasp_group.widths[:, None]).to(
-            dtype=torch.float16, device='cuda')
+            dtype=torch.float16, device='cuda' if gpu else 'cpu')
         widths += self.delta_width
         points = torch.from_numpy(self.scene_points[None, ...]).to(
-            dtype=torch.float16, device='cuda')
+            dtype=torch.float16, device='cuda' if gpu else 'cpu')
         targets = torch.matmul(points - T[:, None, :], R)
         # collision detection
         # height mask

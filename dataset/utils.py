@@ -6,6 +6,7 @@ from pytorch3d.transforms import euler_angles_to_matrix, matrix_to_quaternion
 
 from .config import get_camera_intrinsic
 
+gpu = torch.cuda.is_available()
 
 def convert_2d_to_3d(x, y, d):
     # convert xyd in 2d to xyz in 3d
@@ -166,8 +167,11 @@ def shift_anchors(gg_labels, anchors, iter_times=1):
         beta_ranges, beta_anchors, beta_cnt = iter_anchors(
             beta_ranges, beta_anchors, betas)
     # trans to torch cuda tensor
-    new_gamma_anchors = torch.from_numpy(gamma_anchors).cuda()
-    new_beta_anchors = torch.from_numpy(beta_anchors).cuda()
+    new_gamma_anchors = torch.from_numpy(gamma_anchors)
+    new_beta_anchors = torch.from_numpy(beta_anchors)
+    if gpu:
+        new_gamma_anchors = new_gamma_anchors.cuda()
+        new_beta_anchors = new_beta_anchors.cuda()
     # moving average
     anchors['gamma'] = (new_gamma_anchors + anchors['gamma']) / 2
     anchors['beta'] = (new_beta_anchors + anchors['beta']) / 2
@@ -217,13 +221,19 @@ class PointCloudHelper:
         feature_len = 3 + 3 * include_rgb
         points_all = -torch.ones(
             (batch_size, self.all_points_num, feature_len),
-            dtype=torch.float32).cuda()
+            dtype=torch.float32)
+        if gpu:
+            points_all = points_all.cuda()
         # cal z
         idxs = []
         masks = (depths > 0)
         cur_zs = depths / 1000.0
-        cur_xs = self.points_x.cuda() * cur_zs
-        cur_ys = self.points_y.cuda() * cur_zs
+        if gpu:
+            cur_xs = self.points_x.cuda() * cur_zs
+            cur_ys = self.points_y.cuda() * cur_zs
+        else:
+            cur_xs = self.points_x * cur_zs
+            cur_ys = self.points_y * cur_zs
         for i in range(batch_size):
             # convert point cloud to xyz maps
             points = torch.stack([cur_xs[i], cur_ys[i], cur_zs[i]], axis=-1)
@@ -251,10 +261,16 @@ class PointCloudHelper:
         # downsample
         downsample_depths = nnf.interpolate(depths[:, None],
                                             size=self.output_shape,
-                                            mode='nearest').squeeze(1).cuda()
+                                            mode='nearest').squeeze(1)
+        if gpu:
+            downsample_depths = downsample_depths.cuda()
         # convert xyzs
         cur_zs = downsample_depths / 1000.0
-        cur_xs = self.points_x_downscale.cuda() * cur_zs
-        cur_ys = self.points_y_downscale.cuda() * cur_zs
+        if gpu:
+            cur_xs = self.points_x_downscale.cuda() * cur_zs
+            cur_ys = self.points_y_downscale.cuda() * cur_zs
+        else:
+            cur_xs = self.points_x_downscale * cur_zs
+            cur_ys = self.points_y_downscale * cur_zs
         xyzs = torch.stack([cur_xs, cur_ys, cur_zs], axis=-1)
         return xyzs.transpose(1, 3).transpose(2, 3)

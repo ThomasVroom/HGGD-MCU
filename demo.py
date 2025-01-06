@@ -77,14 +77,20 @@ class PointCloudHelper:
     def to_scene_points(self, rgbs: torch.Tensor, depths: torch.Tensor, include_rgb=True):
         batch_size = rgbs.shape[0]
         feature_len = 3 + 3 * include_rgb
-        points_all = -torch.ones((batch_size, self.all_points_num, feature_len), dtype=torch.float32).cuda()
+        points_all = -torch.ones((batch_size, self.all_points_num, feature_len), dtype=torch.float32)
+        if gpu:
+            points_all = points_all.cuda()
 
         # calculate z
         idxs = []
         masks = (depths > 0)
         cur_zs = depths / 1000.0
-        cur_xs = self.points_x.cuda() * cur_zs
-        cur_ys = self.points_y.cuda() * cur_zs
+        if gpu:
+            cur_xs = self.points_x.cuda() * cur_zs
+            cur_ys = self.points_y.cuda() * cur_zs
+        else:
+            cur_xs = self.points_x * cur_zs
+            cur_ys = self.points_y * cur_zs
         for i in range(batch_size):
             # convert point cloud to xyz maps
             points = torch.stack([cur_xs[i], cur_ys[i], cur_zs[i]], axis=-1)
@@ -111,11 +117,15 @@ class PointCloudHelper:
     # get a downsampled xyz map
     def to_xyz_maps(self, depths):
         # downsample
-        downsample_depths = F.interpolate(depths[:, None], size=self.output_shape).squeeze(1).cuda()
+        downsample_depths = F.interpolate(depths[:, None], size=self.output_shape).squeeze(1)
         # convert xyzs
         cur_zs = downsample_depths / 1000.0
-        cur_xs = self.points_x_downscale.cuda() * cur_zs
-        cur_ys = self.points_y_downscale.cuda() * cur_zs
+        cur_xs = self.points_x_downscale * cur_zs
+        cur_ys = self.points_y_downscale * cur_zs
+        if gpu:
+            cur_xs = cur_xs.cuda()
+            cur_ys = cur_ys.cuda()
+            cur_zs = cur_zs.cuda()
         xyzs = torch.stack([cur_xs, cur_ys, cur_zs], axis=-1)
         return xyzs.permute(0, 3, 1, 2)
 
@@ -123,11 +133,10 @@ if __name__ == '__main__':
     # set torch and gpu setting
     np.set_printoptions(precision=4, suppress=True)
     torch.set_printoptions(precision=4, sci_mode=False)
-    if torch.cuda.is_available():
+    gpu = torch.cuda.is_available()
+    if gpu:
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = False
-    else:
-        raise RuntimeError('CUDA not available')
 
     # random seed
     random.seed(args.random_seed)
@@ -135,8 +144,11 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
 
     # init the model
-    anchornet = AnchorGraspNet(in_dim=4, ratio=args.ratio, anchor_k=args.anchor_k).cuda()
-    localnet = PointMultiGraspNet(info_size=3, k_cls=args.anchor_num**2).cuda()
+    anchornet = AnchorGraspNet(in_dim=4, ratio=args.ratio, anchor_k=args.anchor_k)
+    localnet = PointMultiGraspNet(info_size=3, k_cls=args.anchor_num**2)
+    if gpu:
+        anchornet = anchornet.cuda()
+        localnet = localnet.cuda()
 
     # load checkpoint
     check_point = torch.load(args.checkpoint_path, weights_only=True)
@@ -144,7 +156,9 @@ if __name__ == '__main__':
     localnet.load_state_dict(check_point['local'])
 
     # load anchors
-    basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1).cuda()
+    basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1)
+    if gpu:
+        basic_ranges = basic_ranges.cuda()
     basic_anchors = (basic_ranges[1:] + basic_ranges[:-1]) / 2
     anchors = {'gamma': basic_anchors, 'beta': basic_anchors}
     anchors['gamma'] = check_point['gamma']
@@ -162,9 +176,9 @@ if __name__ == '__main__':
     ori_rgb = np.array(Image.open(args.rgb_path)) / 255.0
     ori_depth = np.clip(ori_depth, 0, 1000)
     ori_rgb = torch.from_numpy(ori_rgb).permute(2, 1, 0)[None]
-    ori_rgb = ori_rgb.to(device='cuda', dtype=torch.float32)
+    ori_rgb = ori_rgb.to(device='cuda' if gpu else 'cpu', dtype=torch.float32)
     ori_depth = torch.from_numpy(ori_depth).T[None]
-    ori_depth = ori_depth.to(device='cuda', dtype=torch.float32)
+    ori_depth = ori_depth.to(device='cuda' if gpu else 'cpu', dtype=torch.float32)
     print("ori_rgb:", ori_rgb.shape)
     print("ori_depth:", ori_depth.shape)
 
@@ -183,7 +197,7 @@ if __name__ == '__main__':
 
     # generate 2d input
     x = torch.concat([depth[None], rgb], 1)
-    x = x.to(device='cuda', dtype=torch.float32)
+    x = x.to(device='cuda' if gpu else 'cpu', dtype=torch.float32)
     print("x:", x.shape)
 
     # inference
@@ -254,7 +268,7 @@ if __name__ == '__main__':
         g_ds = rect_gg.depths[None]
         cur_info = np.vstack([g_thetas, g_ws, g_ds])
         grasp_info = np.vstack([grasp_info, cur_info.T])
-        grasp_info = torch.from_numpy(grasp_info).to(dtype=torch.float32, device='cuda')
+        grasp_info = torch.from_numpy(grasp_info).to(dtype=torch.float32, device='cuda' if gpu else 'cpu')
         print("grasp_info:", grasp_info.shape)
 
         # localnet (NMG)
