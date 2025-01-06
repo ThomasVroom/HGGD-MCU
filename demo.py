@@ -118,14 +118,16 @@ class PointCloudHelper:
     def to_xyz_maps(self, depths):
         # downsample
         downsample_depths = F.interpolate(depths[:, None], size=self.output_shape).squeeze(1)
+        if gpu:
+            downsample_depths = downsample_depths.cuda()
         # convert xyzs
         cur_zs = downsample_depths / 1000.0
-        cur_xs = self.points_x_downscale * cur_zs
-        cur_ys = self.points_y_downscale * cur_zs
         if gpu:
-            cur_xs = cur_xs.cuda()
-            cur_ys = cur_ys.cuda()
-            cur_zs = cur_zs.cuda()
+            cur_xs = self.points_x_downscale.cuda() * cur_zs
+            cur_ys = self.points_y_downscale.cuda() * cur_zs
+        else:
+            cur_xs = self.points_x_downscale * cur_zs
+            cur_ys = self.points_y_downscale * cur_zs
         xyzs = torch.stack([cur_xs, cur_ys, cur_zs], axis=-1)
         return xyzs.permute(0, 3, 1, 2)
 
