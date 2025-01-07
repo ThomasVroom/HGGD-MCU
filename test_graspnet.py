@@ -25,13 +25,13 @@ from models.localgraspnet import PointMultiGraspNet
 from train_utils import *
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint-path', default=None)
+parser.add_argument('--checkpoint-path', default='./realsense_checkpoint')
 
 # dataset
-parser.add_argument('--dataset-path')
-parser.add_argument('--scene-path')
-parser.add_argument('--scene-l', type=int)
-parser.add_argument('--scene-r', type=int)
+parser.add_argument('--dataset-path', default='/data/6dto2drefine_realsense')
+parser.add_argument('--scene-path', default='/ssd/graspnet')
+parser.add_argument('--scene-l', type=int, default=100)
+parser.add_argument('--scene-r', type=int, default=130)
 parser.add_argument('--grasp-count', type=int, default=5000)
 parser.add_argument('--dump-dir',
                     help='Dump dir to save outputs',
@@ -39,8 +39,8 @@ parser.add_argument('--dump-dir',
 parser.add_argument('--num-workers', type=int, default=4)
 
 # 2d
-parser.add_argument('--input-h', type=int)
-parser.add_argument('--input-w', type=int)
+parser.add_argument('--input-h', type=int, default=360)
+parser.add_argument('--input-w', type=int, default=640)
 parser.add_argument('--sigma', type=int, default=10)
 parser.add_argument('--ratio', type=int, default=8)
 parser.add_argument('--anchor-k', type=int, default=6)
@@ -49,10 +49,10 @@ parser.add_argument('--anchor-z', type=float, default=20.0)
 parser.add_argument('--grid-size', type=int, default=8)
 
 # pc
-parser.add_argument('--anchor-num', type=int)
-parser.add_argument('--all-points-num', type=int)
-parser.add_argument('--center-num', type=int)
-parser.add_argument('--group-num', type=int)
+parser.add_argument('--anchor-num', type=int, default=7)
+parser.add_argument('--all-points-num', type=int, default=25600)
+parser.add_argument('--center-num', type=int, default=48)
+parser.add_argument('--group-num', type=int, default=512)
 parser.add_argument('--local-grasp-num', type=int, default=5000)
 
 # grasp detection
@@ -69,10 +69,11 @@ parser.add_argument('--logdir',
 parser.add_argument('--random-seed', type=int, default=123, help='Random seed')
 parser.add_argument('--description',
                     type=str,
-                    default='',
+                    default='realsense_seen',
                     help='Logging description')
 
 args = parser.parse_args()
+gpu = torch.cuda.is_available()
 
 
 def inference():
@@ -109,15 +110,18 @@ def inference():
     localnet = PointMultiGraspNet(info_size=3, k_cls=args.anchor_num**2)
 
     # multi gpu
-    anchornet = anchornet.cuda()
-    localnet = localnet.cuda()
+    if gpu:
+        anchornet = anchornet.cuda()
+        localnet = localnet.cuda()
 
     # Load checkpoint
-    check_point = torch.load(args.checkpoint_path)
+    check_point = torch.load(args.checkpoint_path, map_location=torch.device('cpu'))
     anchornet.load_state_dict(check_point['anchor'])
     localnet.load_state_dict(check_point['local'])
     # load checkpoint
-    basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1).cuda()
+    basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1)
+    if gpu:
+        basic_ranges = basic_ranges.cuda()
     basic_anchors = (basic_ranges[1:] + basic_ranges[:-1]) / 2
     anchors = {'gamma': basic_anchors, 'beta': basic_anchors}
     anchors['gamma'] = check_point['gamma']
@@ -144,12 +148,20 @@ def inference():
             # depth = medfilt2d(depth, kernel_size=5)
             depth = torch.from_numpy(depth).float()[None]
             # get scene points
-            view_points, _, _ = test_data.dataset.helper.to_scene_points(
-                rgb.cuda(), depth.cuda(), include_rgb=True)
+            if gpu:
+                view_points, _, _ = test_data.dataset.helper.to_scene_points(
+                    rgb.cuda(), depth.cuda(), include_rgb=True)
+            else:
+                view_points, _, _ = test_data.dataset.helper.to_scene_points(
+                    rgb, depth, include_rgb=True)
+                
             points = view_points[..., :3]
             view_points = view_points.squeeze()
             # get xyz maps
-            xyzs = test_data.dataset.helper.to_xyz_maps(depth.cuda())
+            if gpu:
+                xyzs = test_data.dataset.helper.to_xyz_maps(depth.cuda())
+            else:
+                xyzs = test_data.dataset.helper.to_xyz_maps(depth)
             # get labels
             all_grasp_labels = []
             for grasppath in grasppaths:
@@ -160,7 +172,8 @@ def inference():
 
             # 2d prediction
             x, _, _, _, _ = anchor_data
-            x = x.cuda(non_blocking=True)
+            if gpu:
+                x = x.cuda(non_blocking=True)
             pred_2d, perpoint_features = anchornet(x)
 
             loc_map, cls_mask, theta_offset, height_offset, width_offset = \
@@ -184,7 +197,8 @@ def inference():
 
             # get 2d time
             if batch_idx >= 1:
-                torch.cuda.synchronize()
+                if gpu:
+                    torch.cuda.synchronize()
                 time_2d += time() - start
 
             # 2d bbox validation
@@ -204,9 +218,11 @@ def inference():
             # feature fusion
             points_all = feature_fusion(points, perpoint_features, xyzs)
             rect_ggs = [rect_gg]
+            if gpu:
+                depth = depth.cuda()
             pc_group, valid_local_centers = data_process(
                 points_all,
-                depth.cuda(),
+                depth,
                 rect_ggs,
                 args.center_num,
                 args.group_num, (args.input_w, args.input_h),
@@ -223,12 +239,13 @@ def inference():
             g_ds = rect_gg.depths[None]
             cur_info = np.vstack([g_thetas, g_ws, g_ds])
             grasp_info = np.vstack([grasp_info, cur_info.T])
-            grasp_info = torch.from_numpy(grasp_info).to(dtype=torch.float32,
-                                                         device='cuda')
+            grasp_info = torch.from_numpy(grasp_info).to(dtype=torch.float32, device='cuda' if gpu else 'cpu')
+
 
             # get data time
             if batch_idx >= 1:
-                torch.cuda.synchronize()
+                if gpu:
+                    torch.cuda.synchronize()
                 time_data += time() - start
             start = time()
 
@@ -246,7 +263,8 @@ def inference():
 
             # get 6d time
             if batch_idx >= 1:
-                torch.cuda.synchronize()
+                if gpu:
+                    torch.cuda.synchronize()
                 time_6d += time() - start
 
             # get collision detect time
@@ -261,7 +279,8 @@ def inference():
 
             # get collision detect
             if batch_idx >= 1:
-                torch.cuda.synchronize()
+                if gpu:
+                    torch.cuda.synchronize()
                 time_colli += time() - start
             start = time()
 
@@ -276,7 +295,8 @@ def inference():
             gg = gg.sort_by_score()
 
             if batch_idx >= 1:
-                torch.cuda.synchronize()
+                if gpu:
+                    torch.cuda.synchronize()
                 time_nms += time() - start
 
             pred_gg = HGGDGraspGroup(translations=gg.translations,
@@ -354,8 +374,8 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = False
-    else:
-        raise RuntimeError('CUDA not available')
+    # else:
+    #     raise RuntimeError('CUDA not available')
 
     # random seed
     random.seed(args.random_seed)

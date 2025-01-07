@@ -153,7 +153,7 @@ if __name__ == '__main__':
         localnet = localnet.cuda()
 
     # load checkpoint
-    check_point = torch.load(args.checkpoint_path, weights_only=True)
+    check_point = torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device('cpu'))
     anchornet.load_state_dict(check_point['anchor'])
     localnet.load_state_dict(check_point['local'])
 

@@ -39,11 +39,18 @@ class ModelFreeCollisionDetector():
             raise ValueError(f'Invalid collision detection mode: {mode}')
 
         # down sample to voxel
-        scene_cloud = cupoch.geometry.PointCloud()
-        scene_cloud.from_points_dlpack(to_dlpack(scene_points))
-        scene_cloud = scene_cloud.voxel_down_sample(voxel_size)
-        self.scene_points = np.array(scene_cloud.points.cpu(),
-                                     dtype=np.float16)
+        if gpu:
+            scene_cloud = cupoch.geometry.PointCloud()
+            scene_cloud.from_points_dlpack(to_dlpack(scene_points))
+            scene_cloud = scene_cloud.voxel_down_sample(voxel_size)
+            self.scene_points = np.array(scene_cloud.points.cpu(),
+                                        dtype=np.float16)
+        else:
+            scene_cloud = o3d.geometry.PointCloud()
+            scene_points_np = scene_points.numpy()
+            scene_cloud.points = o3d.utility.Vector3dVector(scene_points_np)
+            self.scene_points = np.asarray(scene_cloud.points, dtype=np.float16)
+
         # self.scene_points = scene_points.cpu().numpy()
 
     def detect(self, grasp_group, approach_dist=0.05):
