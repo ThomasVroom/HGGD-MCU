@@ -151,7 +151,7 @@ class AnchorGraspNet(nn.Module):
         self.trconv = nn.ModuleList()
         # backbone
         self.feature_dim = 128
-        self.backbone = Backbone(in_dim, self.feature_dim // 16)
+        self.backbone = Backbone(in_dim, self.feature_dim // 16, mode='34')
 
         # transconv
         self.depth = 4

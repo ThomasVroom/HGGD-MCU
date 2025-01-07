@@ -22,25 +22,25 @@ parser.add_argument('--random-seed', type=int, default=1)
 # image input
 parser.add_argument('--rgb-path', default='images/demo_rgb.png')
 parser.add_argument('--depth-path', default='images/demo_depth.png')
-parser.add_argument('--input-h', type=int, default=720) # height of input image
-parser.add_argument('--input-w', type=int, default=1280) # width of input image
+parser.add_argument('--input-h', type=int, default=int(720)) # height of input image
+parser.add_argument('--input-w', type=int, default=int(1280)) # width of input image
 
 # 2d grasping
 parser.add_argument('--sigma', type=int, default=10)
-parser.add_argument('--ratio', type=int, default=8)
-parser.add_argument('--anchor-k', type=int, default=6)
-parser.add_argument('--anchor-w', type=float, default=50.0)
-parser.add_argument('--anchor-z', type=float, default=20.0)
-parser.add_argument('--grid-size', type=int, default=8)
+parser.add_argument('--ratio', type=int, default=8) # grasp attributes prediction downsample ratio
+parser.add_argument('--anchor-k', type=int, default=6) # in-plane rotation anchor number
+parser.add_argument('--anchor-w', type=float, default=50.0) # grasp width anchor size
+parser.add_argument('--anchor-z', type=float, default=20.0) # grasp depth anchor size
+parser.add_argument('--grid-size', type=int, default=8) # grid size for grid-based center sampling
 
 # 6d grasping
 parser.add_argument('--heatmap-thres', type=float, default=0.01) # heatmap threshold
-parser.add_argument('--local-k', type=int, default=10) # localnet k
-parser.add_argument('--depth-thres', type=float, default=0.02) # depth threshold for collision detection
-parser.add_argument('--max-points', type=int, default=25600) # max number of points in point cloud
-parser.add_argument('--anchor-num', type=int, default=7)
-parser.add_argument('--center-num', type=int, default=48)
-parser.add_argument('--group-num', type=int, default=512)
+parser.add_argument('--local-k', type=int, default=10) # grasp detection number in each local region (localnet)
+parser.add_argument('--depth-thres', type=float, default=0.01) # depth threshold for collision detection
+parser.add_argument('--max-points', type=int, default=25600) # downsampled max number of points in point cloud
+parser.add_argument('--anchor-num', type=int, default=7) # spatial rotation anchor number
+parser.add_argument('--center-num', type=int, default=64) # sampled local center/region number
+parser.add_argument('--group-num', type=int, default=512) # local region fps number
 
 args = parser.parse_args()
 
@@ -174,8 +174,8 @@ if __name__ == '__main__':
     localnet.eval()
 
     # read image and convert to tensor
-    ori_depth = np.array(Image.open(args.depth_path))
-    ori_rgb = np.array(Image.open(args.rgb_path)) / 255.0
+    ori_depth = np.array(Image.open(args.depth_path).resize((args.input_w, args.input_h)))
+    ori_rgb = np.array(Image.open(args.rgb_path).resize((args.input_w, args.input_h))) / 255.0
     ori_depth = np.clip(ori_depth, 0, 1000)
     ori_rgb = torch.from_numpy(ori_rgb).permute(2, 1, 0)[None]
     ori_rgb = ori_rgb.to(device='cuda' if gpu else 'cpu', dtype=torch.float32)
