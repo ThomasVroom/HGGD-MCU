@@ -128,11 +128,8 @@ class AnchorGraspNet(nn.Module):
         self.backbone = Backbone(in_dim, self.feature_dim // 16, mode='34')
 
         # stacked transposed-convolutions or upsampling-convolutions (decoder)
-        self.depth = 4
-        channels = [ # usually [64, 32, 16, 8, 8]
-            max(8, self.feature_dim // (2**(i + 1)))
-            for i in range(self.depth + 1)
-        ]
+        self.depth = 4 # channels: [64, 32, 16, 8, 8]
+        channels = [max(8, self.feature_dim // (2**(i + 1))) for i in range(self.depth + 1)]
         cur_dim = self.feature_dim
         output_sizes = [(40, 23), (80, 45)] # only for upsampling
         for i, dim in enumerate(channels):
@@ -182,6 +179,7 @@ class AnchorGraspNet(nn.Module):
             # down sample classification mask
             if x.shape[2] == 80:
                 features = x.detach()
+                print(f"extracted features in layer {i} with shape {features.shape}")
             if int(np.log2(self.ratio)) == self.depth - i:
                 cls_mask = self.cls_mask_conv(x)
                 theta_offset = self.theta_offset_conv(x)

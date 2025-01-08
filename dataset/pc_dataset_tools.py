@@ -135,14 +135,14 @@ def get_group_pc(pc: torch.Tensor,
 def center2dtopc(rect_ggs: List,
                  center_num,
                  depths: torch.Tensor,
-                 output_size,
+                 input_size,
                  append_random_center=True,
                  is_training=True):
     # add extra axis when valid, avoid dim errors
     batch_size = depths.shape[0]
     center_batch_pc = []
 
-    scale_x, scale_y = 1280 / output_size[0], 720 / output_size[1]
+    scale_x, scale_y = 2, 2
     for i in range(batch_size):
         center_2d = rect_ggs[i].centers.copy()
         center_depth = rect_ggs[i].depths.copy()
@@ -152,8 +152,8 @@ def center2dtopc(rect_ggs: List,
             # print(f'current center_2d == {len(center_2d)}. using random center')
             random_local_max = np.random.rand(center_num - len(center_2d), 2)
             random_local_max = np.vstack([
-                (random_local_max[:, 0] * output_size[0]).astype(np.int32),
-                (random_local_max[:, 1] * output_size[1]).astype(np.int32)
+                (random_local_max[:, 0] * input_size[0]).astype(np.int32),
+                (random_local_max[:, 1] * input_size[1]).astype(np.int32)
             ]).T
             center_2d = np.vstack([center_2d, random_local_max])
 
@@ -209,7 +209,7 @@ def center2dtopc(rect_ggs: List,
         # convert delta depth to actual depth for further width conversion
         rect_ggs[i].actual_depths = cur_pc_tensor[:, 2].cpu().numpy() * 1000.0
         # attention: rescale here
-        rect_ggs[i].actual_depths *= (1280 // output_size[0])
+        rect_ggs[i].actual_depths *= 2
         # add small noise to local centers (when train)
         if is_training:
             cur_pc_tensor += torch.randn(*cur_pc_tensor.shape,
@@ -368,14 +368,14 @@ def data_process(points: torch.Tensor,
                  rect_ggs: List,
                  center_num,
                  group_num,
-                 output_size,
+                 input_size,
                  min_points=32,
                  is_training=True):
     # select partial pc centers
     local_center = center2dtopc(rect_ggs,
                                 center_num,
                                 depths,
-                                output_size,
+                                input_size,
                                 append_random_center=False,
                                 is_training=is_training)
     # get grasp width for pc segmentation

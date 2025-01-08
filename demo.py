@@ -51,7 +51,7 @@ class PointCloudHelper:
     def __init__(self) -> None:
         # precalculate x,y map
         self.all_points_num = args.max_points
-        self.output_shape = (80, 45) # downsampled 16:9
+        self.output_shape = (80, 45) # downsampled aspect ratio of input image
 
         # get intrinsics
         intrinsics = get_camera_intrinsic()
@@ -256,7 +256,7 @@ if __name__ == '__main__':
             [rect_gg],
             args.center_num,
             args.group_num,
-            (args.input_w // 2, args.input_h // 2),
+            (args.input_w, args.input_h),
             min_points=32,
             is_training=False)
         points_all = points_all.squeeze()
