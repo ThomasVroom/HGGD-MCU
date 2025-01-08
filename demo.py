@@ -27,7 +27,7 @@ parser.add_argument('--input-w', type=int, default=int(1280)) # width of input i
 
 # 2d grasping
 parser.add_argument('--sigma', type=int, default=10)
-parser.add_argument('--ratio', type=int, default=8) # grasp attributes prediction downsample ratio
+parser.add_argument('--ratio', type=int, default=8) # grasp attributes prediction downsample ratio, must be 2^N
 parser.add_argument('--anchor-k', type=int, default=6) # in-plane rotation anchor number
 parser.add_argument('--anchor-w', type=float, default=50.0) # grasp width anchor size
 parser.add_argument('--anchor-z', type=float, default=20.0) # grasp depth anchor size
