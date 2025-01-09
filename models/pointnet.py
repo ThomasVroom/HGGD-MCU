@@ -1,8 +1,6 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 class STNkd(nn.Module):
 
@@ -44,7 +42,7 @@ class STNkd(nn.Module):
         x = x.view(-1, self.k, self.k)
         return x
 
-
+# PointNet feature extractor
 class PointNetfeat(nn.Module):
 
     def __init__(self, feature_len, extra_feature_len=32):

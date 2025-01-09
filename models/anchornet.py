@@ -177,7 +177,7 @@ class AnchorGraspNet(nn.Module):
             x = layer(x + xs[self.depth - i])
 
             # down sample classification mask
-            if x.shape[2] == 80:
+            if x.shape[1] == 32:
                 features = x.detach()
                 print(f"extracted features in layer {i} with shape {features.shape}")
             if int(np.log2(self.ratio)) == self.depth - i:
