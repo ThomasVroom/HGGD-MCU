@@ -28,10 +28,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint-path', default='./realsense_checkpoint')
 
 # dataset
-parser.add_argument('--dataset-path', default='/data/6dto2drefine_realsense')
-parser.add_argument('--scene-path', default='/ssd/graspnet')
+parser.add_argument('--dataset-path', default='./data/6dto2drefine_realsense')
+parser.add_argument('--scene-path', default='./graspnet')
 parser.add_argument('--scene-l', type=int, default=100)
-parser.add_argument('--scene-r', type=int, default=130)
+parser.add_argument('--scene-r', type=int, default=101)
 parser.add_argument('--grasp-count', type=int, default=5000)
 parser.add_argument('--dump-dir',
                     help='Dump dir to save outputs',
