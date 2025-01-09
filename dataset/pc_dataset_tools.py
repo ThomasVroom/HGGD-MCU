@@ -393,4 +393,4 @@ def data_process(points: torch.Tensor,
     # modify rect_ggs
     for i, mask in enumerate(valid_center_masks):
         rect_ggs[i] = rect_ggs[i][mask.cpu().numpy()]
-    return pc_group, valid_local_centers, rect_ggs
+    return pc_group, valid_local_centers

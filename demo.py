@@ -51,7 +51,7 @@ class PointCloudHelper:
     def __init__(self) -> None:
         # precalculate x,y map
         self.all_points_num = args.max_points
-        self.output_shape = (args.input_w // 16, args.input_h // 16) # downsampled aspect ratio of input image
+        self.output_shape = (80, 45) # downsampled aspect ratio of input image
 
         # get intrinsics
         intrinsics = get_camera_intrinsic()
@@ -250,7 +250,7 @@ if __name__ == '__main__':
 
         # feature fusion
         points_all = feature_fusion(view_points[..., :3], perpoint_features, xyzs)
-        pc_group, valid_local_centers, new_rect_ggs = data_process(
+        pc_group, valid_local_centers = data_process(
             points_all,
             ori_depth,
             [rect_gg],
@@ -259,7 +259,6 @@ if __name__ == '__main__':
             (args.input_w, args.input_h),
             min_points=32,
             is_training=False)
-        rect_gg = new_rect_ggs[0]
         points_all = points_all.squeeze()
         print("points_all:", points_all.shape)
         print("pc_group:", pc_group.shape)
@@ -275,7 +274,7 @@ if __name__ == '__main__':
         print("grasp_info:", grasp_info.shape)
 
         # localnet (NMG)
-        _, pred, offset = localnet(pc_group.transpose(1, 2), grasp_info)
+        _, pred, offset = localnet(pc_group, grasp_info)
 
         # detect 6d grasp from 2d output and 6d output
         _, pred_rect_gg = detect_6d_grasp_multi(rect_gg,
