@@ -234,8 +234,8 @@ def prepare_torch_and_logger(args, mode='train'):
     if torch.cuda.is_available():
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
-    else:
-        raise RuntimeError('CUDA not available')
+    # else:
+    #     raise RuntimeError('CUDA not available')
 
     # random seed
     random.seed(args.random_seed)

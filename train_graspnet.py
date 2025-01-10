@@ -30,6 +30,109 @@ from train_utils import *
 dis_criterion = 0.05
 rot_criterion = 0.25
 
+parser = argparse.ArgumentParser(description='Training script for GraspNet')
+
+parser.add_argument('--use-depth', type=int, default=1)
+parser.add_argument('--use-rgb', type=int, default=1)
+
+# --------------------------
+# Training parameters
+# --------------------------
+parser.add_argument('--batch-size', type=int, default=4, help='Batch size')
+parser.add_argument('--step-cnt', type=int, default=2, help='Number of steps')
+parser.add_argument('--lr', type=float, default=1e-2, help='Learning rate')
+
+# --------------------------
+# Point cloud / 3D parameters
+# --------------------------
+parser.add_argument('--anchor-num', type=int, default=7)
+parser.add_argument('--anchor-k', type=int, default=6)
+parser.add_argument('--anchor-w', type=float, default=50.0)
+parser.add_argument('--anchor-z', type=float, default=20.0)
+parser.add_argument('--all-points-num', type=int, default=25600)
+parser.add_argument('--group-num', type=int, default=512)
+parser.add_argument('--center-num', type=int, default=128)
+parser.add_argument('--scene-l', type=int, default=0)
+parser.add_argument('--scene-r', type=int, default=100)
+parser.add_argument('--noise', type=int, default=0)
+parser.add_argument('--grid-size', type=int, default=8)
+
+# --------------------------
+# 2D image parameters
+# --------------------------
+parser.add_argument('--input-h', type=int, default=360)
+parser.add_argument('--input-w', type=int, default=640)
+parser.add_argument('--sigma', type=int, default=10)
+
+# --------------------------
+# Loss weighting parameters
+# --------------------------
+parser.add_argument('--loc-a', type=int, default=1,
+                    help='Localization loss weight')
+parser.add_argument('--reg-b', type=int, default=5,
+                    help='Regression loss weight')
+parser.add_argument('--cls-c', type=int, default=1,
+                    help='Classification loss weight')
+parser.add_argument('--offset-d', type=int, default=1,
+                    help='Offset loss weight')
+
+# --------------------------
+# General training settings
+# --------------------------
+parser.add_argument('--epochs', type=int, default=15, help='Total epochs')
+parser.add_argument('--ratio', type=int, default=8, help='Downsample ratio')
+parser.add_argument('--num-workers', type=int, default=4,
+                    help='Number of workers for data loading')
+parser.add_argument('--save-freq', type=int, default=1,
+                    help='Frequency to save checkpoints (in epochs)')
+parser.add_argument('--optim', type=str, default='adamw',
+                    help='Optimizer type (e.g., sgd, adam, adamw, etc.)')
+
+# --------------------------
+# Dataset / Logging
+# --------------------------
+parser.add_argument('--grasp-count', type=int, default=5000)
+parser.add_argument('--dump-dir',
+                    help='Dump dir to save outputs',
+                    default='./pred/test')
+
+parser.add_argument('--dataset-path', type=str, default='./data/6dto2drefine_realsense',
+                    help='Path to the dataset')
+parser.add_argument('--scene-path', type=str, default='./graspnet',
+                    help='Path to the scene data (e.g., GraspNet scenes)')
+parser.add_argument('--description', type=str, default='realsense',
+                    help='A short descriptor for logging or checkpointing')
+
+# --------------------------
+# Extra features / Flags
+# --------------------------
+parser.add_argument('--joint-trainning', action='store_true',
+                    help='Enable joint training if set')
+
+parser.add_argument('--logdir',
+                    type=str,
+                    default='./logs/',
+                    help='Log directory')
+parser.add_argument('--random-seed', type=int, default=123, help='Random seed')
+
+
+# !!!!!! THE FOLLOWING PARAMETERS ARE DECIDED BY US !!!!!!
+
+parser.add_argument('--pre-epochs', type=int, default=5,
+                    help='Number of epochs to train AnchorNet alone before LocalNet is activated')
+
+parser.add_argument('--shift-epoch', type=int, default=2,
+                    help='Until this epoch, the script will keep shifting gamma/beta anchors')
+
+parser.add_argument('--local-grasp-num', type=int, default=500,
+                    help='Max number of local grasps per batch for the LocalNet')
+
+parser.add_argument('--checkpoint-path', default=None)
+
+
+args = parser.parse_args()
+gpu = torch.cuda.is_available()
+
 
 def validate(epoch, anchornet: nn.Module, localnet: nn.Module,
              val_data: torch.utils.data.DataLoader, anchors: dict, args):
@@ -69,10 +172,14 @@ def validate(epoch, anchornet: nn.Module, localnet: nn.Module,
                                                         ncols=80):
             batch_idx += 1
             # get scene points
+            if gpu:
+                rgb = rgb.cuda()
+                depth = depth.cuda()
+                
             points, _, _ = val_data.dataset.helper.to_scene_points(
-                rgb.cuda(), depth.cuda(), include_rgb=False)
+                rgb, depth, include_rgb=False)
             # get xyz maps
-            xyzs = val_data.dataset.helper.to_xyz_maps(depth.cuda())
+            xyzs = val_data.dataset.helper.to_xyz_maps(depth)
             # get labels
             gg_ori_labels = get_ori_grasp_label(grasppaths)
             all_grasp_labels = []
@@ -82,8 +189,11 @@ def validate(epoch, anchornet: nn.Module, localnet: nn.Module,
             # 2d prediction
             x, y, _, _, _ = anchor_data
 
-            x = x.cuda()
-            target = [yy.cuda() for yy in y]
+            if gpu:
+                x = x.cuda()
+                yy = yy.cuda()
+                    
+            target = [yy for yy in y]
             pred_2d, perpoint_features = anchornet(x)
 
             loc_map, cls_mask, theta_offset, depth_offset, width_offset = \
@@ -142,9 +252,13 @@ def validate(epoch, anchornet: nn.Module, localnet: nn.Module,
                 # feature fusion using knn and max pooling
                 points_all = feature_fusion(points, perpoint_features, xyzs)
                 rect_ggs = [rect_gg]
+                
+                if gpu:
+                    depth = depth.cuda()
+                    
                 pc_group, valid_local_centers = data_process(
                     points_all,
-                    depth.cuda(),
+                    depth,
                     rect_ggs,
                     args.center_num,
                     args.group_num, (args.input_w, args.input_h),
@@ -166,7 +280,7 @@ def validate(epoch, anchornet: nn.Module, localnet: nn.Module,
                 cur_info = np.vstack([g_thetas, g_ws, g_ds])
                 grasp_info = np.vstack([grasp_info, cur_info.T])
                 grasp_info = torch.from_numpy(grasp_info).to(
-                    dtype=torch.float32, device='cuda')
+                    dtype=torch.float32, device='cuda' if gpu else 'cpu')
 
                 # get gamma and beta classification result
                 # padding for benchmark
@@ -176,13 +290,13 @@ def validate(epoch, anchornet: nn.Module, localnet: nn.Module,
                     torch.zeros(zero_pad_num,
                                 pc_group.shape[1],
                                 pc_group.shape[2],
-                                device='cuda')
+                                device='cuda' if gpu else 'cpu')
                 ])
                 grasp_info = torch.concat([
                     grasp_info,
                     torch.zeros(zero_pad_num,
                                 grasp_info.shape[1],
-                                device='cuda')
+                                device='cuda' if gpu else 'cpu')
                 ])
                 _, pred_view, offset = localnet(pc_group, grasp_info)
                 valid_num = fixed_center_num - zero_pad_num
@@ -199,7 +313,7 @@ def validate(epoch, anchornet: nn.Module, localnet: nn.Module,
                     anchors,
                     k=args.local_k)
                 pred_grasp = torch.from_numpy(pred_grasp).to(
-                    device='cuda', dtype=torch.float32)
+                    device='cuda' if gpu else 'cpu', dtype=torch.float32)
 
                 # get nearest grasp labels
                 gg_labels, _ = get_center_group_label(valid_local_centers,
@@ -334,10 +448,15 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
         batch_idx += 1
 
         # get scene points
+        
+        if gpu:
+            rgbs = rgbs.cuda()
+            depths = depths.cuda()
+            
         points, _, _ = train_data.dataset.helper.to_scene_points(
-            rgbs.cuda(), depths.cuda(), include_rgb=False)
+            rgbs, depths, include_rgb=False)
         # get xyz maps
-        xyzs = train_data.dataset.helper.to_xyz_maps(depths.cuda())
+        xyzs = train_data.dataset.helper.to_xyz_maps(depths)
         # get labels
         all_grasp_labels = []
         for grasppath in grasppaths:
@@ -345,8 +464,12 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
 
         # train anchornet first
         x, y, _, _, _ = anchor_data
-        x = x.cuda(non_blocking=True)
-        target = [yy.cuda(non_blocking=True) for yy in y]
+        
+        if gpu:
+            x = x.cuda(non_blocking=True)
+            yy = yy.cuda(non_blocking=True)
+
+        target = [yy for yy in y]
         pred_2d, perpoint_features = anchornet(x)
 
         # cal anchor loss
@@ -395,9 +518,12 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
             points_all = feature_fusion(points, perpoint_features, xyzs)
 
             # crop local pcs
+            if gpu:
+                depths = depths.cuda()
+                
             pc_group, valid_local_centers = data_process(
                 points_all,
-                depths.cuda(),
+                depths,
                 rect_ggs,
                 args.center_num,
                 args.group_num, (args.input_w, args.input_h),
@@ -412,7 +538,7 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
                 cur_info = np.vstack([g_thetas, g_ws, g_ds])
                 grasp_info = np.vstack([grasp_info, cur_info.T])
             grasp_info = torch.from_numpy(grasp_info).to(dtype=torch.float32,
-                                                         device='cuda')
+                                                         device='cuda' if gpu else 'cpu')
 
             # check pc_group
             if pc_group.shape[0] == 0:
@@ -535,14 +661,13 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
 
 
 def run():
-    args = parse_args()
-
     # prepare for trainning
     tb, save_folder = prepare_torch_and_logger(args)
 
     # Load Dataset
     logging.info('Loading Dataset...')
     sceneIds = list(range(args.scene_l, args.scene_r))
+    print(args.scene_path)
     Dataset = GraspnetPointDataset(args.all_points_num,
                                    args.dataset_path,
                                    args.scene_path,
@@ -595,11 +720,15 @@ def run():
     localnet = PointMultiGraspNet(3, args.anchor_num**2)
 
     # load checkpoint
-    basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1).cuda()
+    if gpu:
+        basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1).cuda()
+    else:
+        basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1)
+        
     basic_anchors = (basic_ranges[1:] + basic_ranges[:-1]) / 2
     anchors = {'gamma': basic_anchors, 'beta': basic_anchors}
-    if args.checkpoint is not None:
-        ckpt = torch.load(args.checkpoint)
+    if args.checkpoint_path is not None:
+        ckpt = torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device('cpu'))
         if 'gamma' in ckpt and len(ckpt['gamma']) == args.anchor_num:
             anchors['gamma'] = ckpt['gamma']
             anchors['beta'] = ckpt['beta']
@@ -626,8 +755,10 @@ def run():
     # print_model(args, input_channels, anchornet, save_folder)
 
     # multi gpu
-    anchornet = nn.parallel.DataParallel(anchornet).cuda()
-    localnet = nn.parallel.DataParallel(localnet).cuda()
+    if gpu:
+        anchornet = nn.parallel.DataParallel(anchornet).cuda()
+        localnet = nn.parallel.DataParallel(localnet).cuda()
+    
     logging.info('Done')
 
     for epoch in range(args.epochs):
