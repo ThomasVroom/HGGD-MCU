@@ -1,14 +1,15 @@
 import math
 import torch
 import torch.nn as nn
-from .pointnet import PointNetfeat
 
+# localnet
 class PointMultiGraspNet(nn.Module):
 
     def __init__(self, info_size, k_cls):
         super().__init__()
-        self.k_cls = k_cls # number of classes: anchor_num**2 (49)
-        self.pointnet = PointNetfeat(feature_len=3)
+        self.k_cls = k_cls # number of classes: anchor_num**2
+
+        # mlps for anchor and offset prediction
         self.point_layer = nn.Sequential(
             nn.Linear(1024, 512),
             nn.LayerNorm(512),
@@ -42,9 +43,7 @@ class PointMultiGraspNet(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
-    def forward(self, points, info):
-        # pointnet
-        features = self.pointnet(points)
+    def forward(self, features, info):
         # mlp
         point_features = self.point_layer(features)
         info_features = self.info_layer(info)
@@ -52,4 +51,4 @@ class PointMultiGraspNet(nn.Module):
         # get anchors and offset
         pred = self.anchor_mlp(x)
         offset = self.offset_mlp(x).view(-1, self.k_cls, 3)
-        return features, pred, offset
+        return pred, offset

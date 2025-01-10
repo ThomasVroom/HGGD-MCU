@@ -12,8 +12,9 @@ from dataset.config import get_camera_intrinsic
 from dataset.evaluation import (anchor_output_process, collision_detect,
                                 detect_2d_grasp, detect_6d_grasp_multi)
 from dataset.pc_dataset_tools import data_process, feature_fusion
-from models.anchornet import AnchorGraspNet
+from models.anchornet import AnchorGraspNet, Backbone
 from models.localgraspnet import PointMultiGraspNet
+from models.pointnet import PointNetfeat
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint-path', default='realsense_checkpoint')
@@ -24,6 +25,7 @@ parser.add_argument('--rgb-path', default='images/demo_rgb.png')
 parser.add_argument('--depth-path', default='images/demo_depth.png')
 parser.add_argument('--input-h', type=int, default=int(720)) # height of input image
 parser.add_argument('--input-w', type=int, default=int(1280)) # width of input image
+parser.add_argument('--export-onnx', type=bool, default=False) # export .onnx files
 
 # 2d grasping
 parser.add_argument('--sigma', type=int, default=10)
@@ -32,6 +34,7 @@ parser.add_argument('--anchor-k', type=int, default=6) # in-plane rotation ancho
 parser.add_argument('--anchor-w', type=float, default=50.0) # grasp width anchor size
 parser.add_argument('--anchor-z', type=float, default=20.0) # grasp depth anchor size
 parser.add_argument('--grid-size', type=int, default=8) # grid size for grid-based center sampling
+parser.add_argument('--feature-dim', type=int, default=128) # feature dimension for anchor net
 
 # 6d grasping
 parser.add_argument('--heatmap-thres', type=float, default=0.01) # heatmap threshold
@@ -146,16 +149,20 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
 
     # init the model
-    anchornet = AnchorGraspNet(in_dim=4, ratio=args.ratio, anchor_k=args.anchor_k)
+    resnet = Backbone(in_dim=4, planes=args.feature_dim//16, mode='18')
+    anchornet = AnchorGraspNet(feature_dim=args.feature_dim, ratio=args.ratio, anchor_k=args.anchor_k)
+    pointnet = PointNetfeat(feature_len=3)
     localnet = PointMultiGraspNet(info_size=3, k_cls=args.anchor_num**2)
     if gpu:
+        resnet = resnet.cuda()
         anchornet = anchornet.cuda()
+        pointnet = pointnet.cuda()
         localnet = localnet.cuda()
 
     # load checkpoint
     check_point = torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device('cpu'))
-    anchornet.load_state_dict(check_point['anchor'])
-    localnet.load_state_dict(check_point['local'])
+    # anchornet.load_state_dict(check_point['anchor'])
+    # localnet.load_state_dict(check_point['local'])
 
     # load anchors
     basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1)
@@ -204,8 +211,11 @@ if __name__ == '__main__':
 
     # inference
     with torch.no_grad():
+        # use ResNet to get downscaled features
+        xs = resnet(x)
+
         # 2d prediction (GHM)
-        pred_2d, perpoint_features = anchornet(x)
+        pred_2d, perpoint_features = anchornet(xs)
         loc_map, cls_mask, theta_offset, height_offset, width_offset = anchor_output_process(*pred_2d, sigma=args.sigma)
 
         # detect 2d grasps
@@ -248,6 +258,50 @@ if __name__ == '__main__':
         # wait for user to close window... #
         # -------------------------------- #
 
+        if args.export_onnx:
+            torch.onnx.export(
+                resnet,
+                x,                          # model input
+                "resnet.onnx",              # file to save
+                export_params=True,         # store the trained parameter weights inside the onnx file
+                opset_version=11,           # ONNX opset version
+                do_constant_folding=True,   # fold constant ops for optimization
+                input_names=["rgbd_image"],
+                output_names=[
+                    "layer_1_features",
+                    "layer_2_features",
+                    "layer_3_features",
+                    "layer_4_features",
+                    "layer_5_features"
+                ]
+            )
+            print("resnet.onnx saved")
+
+            torch.onnx.export(
+                anchornet,
+                xs,                         # model input
+                "anchornet.onnx",           # file to save
+                export_params=True,         # store the trained parameter weights inside the onnx file
+                opset_version=11,           # ONNX opset version
+                do_constant_folding=True,   # fold constant ops for optimization
+                input_names=[
+                    "layer_1_features",
+                    "layer_2_features",
+                    "layer_3_features",
+                    "layer_4_features",
+                    "layer_5_features"
+                ],
+                output_names=[
+                    "loc_map",
+                    "cls_mask",
+                    "theta_offset",
+                    "depth_offset",
+                    "width_offset",
+                    "perpoint_features"
+                ]
+            )
+            print("anchornet.onnx saved")
+
         # feature fusion
         points_all = feature_fusion(view_points[..., :3], perpoint_features, xyzs)
         pc_group, valid_local_centers, new_rect_ggs = data_process(
@@ -259,8 +313,9 @@ if __name__ == '__main__':
             (args.input_w, args.input_h),
             min_points=32,
             is_training=False)
-        rect_gg = new_rect_ggs[0]
+        rect_gg = new_rect_ggs[0] # overwrite rect_gg to update valid mask
         points_all = points_all.squeeze()
+        pc_group = pc_group.transpose(1, 2) # change structure for localnet
         print("points_all:", points_all.shape)
         print("pc_group:", pc_group.shape)
 
@@ -274,8 +329,11 @@ if __name__ == '__main__':
         grasp_info = torch.from_numpy(grasp_info).to(dtype=torch.float32, device='cuda' if gpu else 'cpu')
         print("grasp_info:", grasp_info.shape)
 
+        # pointnet for feature extraction
+        features = pointnet(pc_group)
+
         # localnet (NMG)
-        _, pred, offset = localnet(pc_group.transpose(1, 2), grasp_info)
+        pred, offset = localnet(features, grasp_info)
 
         # detect 6d grasp from 2d output and 6d output
         _, pred_rect_gg = detect_6d_grasp_multi(rect_gg,
@@ -300,3 +358,33 @@ if __name__ == '__main__':
         vispc.points = o3d.utility.Vector3dVector(points)
         vispc.colors = o3d.utility.Vector3dVector(colors)
         o3d.visualization.draw_geometries([vispc] + grasp_geo)
+
+        if args.export_onnx:
+            torch.onnx.export(
+                pointnet,
+                pc_group,     # model input
+                "pointnet.onnx",            # file to save
+                export_params=True,         # store the trained parameter weights inside the onnx file
+                opset_version=11,           # ONNX opset version
+                do_constant_folding=True,   # fold constant ops for optimization
+                input_names=["pointcloud"],
+                output_names=[
+                    "pointnet_features"
+                ]
+            )
+            print("pointnet.onnx saved")
+
+            torch.onnx.export(
+                localnet,
+                (features, grasp_info),     # model input
+                "localnet.onnx",            # file to save
+                export_params=True,         # store the trained parameter weights inside the onnx file
+                opset_version=11,           # ONNX opset version
+                do_constant_folding=True,   # fold constant ops for optimization
+                input_names=["pointnet_features", "grasp_info"],
+                output_names=[
+                    "anchor_pred",
+                    "offset_pred"
+                ]
+            )
+            print("localnet.onnx saved")

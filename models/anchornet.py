@@ -117,20 +117,16 @@ def conv_with_dim_reshape(in_dim, mid_dim, out_dim, bias=True):
 # AnchorNet (GHM)
 class AnchorGraspNet(nn.Module):
 
-    def __init__(self, ratio=1, in_dim=3, anchor_k=6, mid_dim=32, use_upsampling=False):
+    def __init__(self, feature_dim=128, ratio=1, anchor_k=6, mid_dim=32, use_upsampling=False):
         super(AnchorGraspNet, self).__init__()
 
         self.ratio = ratio
         self.trconv = nn.ModuleList()
 
-        # ResNet as feature extractor (encoder)
-        self.feature_dim = 128
-        self.backbone = Backbone(in_dim, self.feature_dim // 16, mode='34')
-
         # stacked transposed-convolutions or upsampling-convolutions (decoder)
         self.depth = 4 # channels: [64, 32, 16, 8, 8]
-        channels = [max(8, self.feature_dim // (2**(i + 1))) for i in range(self.depth + 1)]
-        cur_dim = self.feature_dim
+        channels = [max(8, feature_dim // (2**(i + 1))) for i in range(self.depth + 1)]
+        cur_dim = feature_dim
         output_sizes = [(40, 23), (80, 45)] # only for upsampling
         for i, dim in enumerate(channels):
             if use_upsampling:
@@ -166,10 +162,7 @@ class AnchorGraspNet(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
-    def forward(self, x):
-        # use backbone to get downscaled features
-        xs = self.backbone(x)
-
+    def forward(self, xs):
         # use trconv or upsampling + conv to get perpoint features
         x = xs[-1]
         for i, layer in enumerate(self.trconv):
