@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from PIL import Image
 
-from dataset.config import get_camera_intrinsic
+from dataset.config import set_resolution, get_camera_intrinsic
 from dataset.evaluation import (anchor_output_process, collision_detect,
                                 detect_2d_grasp, detect_6d_grasp_multi)
 from dataset.pc_dataset_tools import data_process, feature_fusion
@@ -23,8 +23,8 @@ parser.add_argument('--random-seed', type=int, default=1)
 # image input
 parser.add_argument('--rgb-path', default='images/demo_rgb.png')
 parser.add_argument('--depth-path', default='images/demo_depth.png')
-parser.add_argument('--input-h', type=int, default=int(720)) # height of input image
-parser.add_argument('--input-w', type=int, default=int(1280)) # width of input image
+parser.add_argument('--input-h', type=int, default=int(720/2.25)) # height of input image
+parser.add_argument('--input-w', type=int, default=int(1280/2)) # width of input image
 parser.add_argument('--export-onnx', type=bool, default=False) # export .onnx files
 
 # 2d grasping
@@ -54,7 +54,7 @@ class PointCloudHelper:
     def __init__(self) -> None:
         # precalculate x,y map
         self.all_points_num = args.max_points
-        self.output_shape = (args.input_w // 16, args.input_h // 16) # downsampled aspect ratio of input image
+        self.output_shape = (args.input_w//16, args.input_h//16) # downsampled aspect ratio of input image
 
         # get intrinsics
         intrinsics = get_camera_intrinsic()
@@ -151,7 +151,7 @@ if __name__ == '__main__':
     # init the model
     resnet = Backbone(in_dim=4, planes=args.feature_dim//16, mode='18')
     anchornet = AnchorGraspNet(feature_dim=args.feature_dim, ratio=args.ratio, anchor_k=args.anchor_k)
-    pointnet = PointNetfeat(feature_len=3)
+    pointnet = PointNetfeat(feature_len=3, use_bn=(not args.export_onnx)) # don't include bn in onnx
     localnet = PointMultiGraspNet(info_size=3, k_cls=args.anchor_num**2)
     if gpu:
         resnet = resnet.cuda()
@@ -181,15 +181,16 @@ if __name__ == '__main__':
     localnet.eval()
 
     # read image and convert to tensor
-    ori_depth = np.array(Image.open(args.depth_path).resize((args.input_w, args.input_h)))
-    ori_rgb = np.array(Image.open(args.rgb_path).resize((args.input_w, args.input_h))) / 255.0
+    ori_depth = np.array(Image.open(args.depth_path).resize((args.input_w, args.input_h), Image.Resampling.NEAREST))
+    ori_rgb = np.array(Image.open(args.rgb_path).resize((args.input_w, args.input_h), Image.Resampling.LANCZOS)) / 255.0
     ori_depth = np.clip(ori_depth, 0, 1000)
     ori_rgb = torch.from_numpy(ori_rgb).permute(2, 1, 0)[None]
     ori_rgb = ori_rgb.to(device='cuda' if gpu else 'cpu', dtype=torch.float32)
     ori_depth = torch.from_numpy(ori_depth).T[None]
     ori_depth = ori_depth.to(device='cuda' if gpu else 'cpu', dtype=torch.float32)
-    print("ori_rgb:", ori_rgb.shape)
-    print("ori_depth:", ori_depth.shape)
+    print("ori_rgb:", ori_rgb.shape, "ori_depth:", ori_depth.shape)
+    set_resolution(args.input_w, args.input_h)
+    print("camera_intrinsics:", get_camera_intrinsic()[0], get_camera_intrinsic()[1])
 
     # get scene points and xyz maps
     pc_helper = PointCloudHelper()
@@ -199,8 +200,8 @@ if __name__ == '__main__':
     print("xyz:", xyzs.shape)
 
     # downscale image and normalize depth
-    rgb = F.interpolate(ori_rgb, (args.input_w // 2, args.input_h // 2))
-    depth = F.interpolate(ori_depth[None], (args.input_w // 2, args.input_h // 2))[0]
+    rgb = F.interpolate(ori_rgb, (args.input_w//2, args.input_h//2))
+    depth = F.interpolate(ori_depth[None], (args.input_w//2, args.input_h//2))[0]
     depth = depth / 1000.0
     depth = torch.clip((depth - depth.mean()), -1, 1)
 
@@ -241,7 +242,7 @@ if __name__ == '__main__':
         rgb_t = x[0, 1:].cpu().numpy().squeeze().transpose(2, 1, 0)
         depth_t = ori_depth.cpu().numpy().squeeze().T / 1000.0
         resized_rgb = Image.fromarray((rgb_t * 255.0).astype(np.uint8))
-        resized_rgb = np.array(resized_rgb.resize((args.input_w // 2, args.input_h // 2))) / 255.0
+        resized_rgb = np.array(resized_rgb.resize((args.input_w//2, args.input_h//2))) / 255.0
         rect_rgb = rect_gg.plot_rect_grasp_group(resized_rgb, 0).clip(0, 1)
         plt.subplot(221)
         plt.imshow(rgb_t) # original image
@@ -340,7 +341,7 @@ if __name__ == '__main__':
                                                 pred,
                                                 offset,
                                                 valid_local_centers,
-                                                (args.input_w // 2, args.input_h // 2),
+                                                (args.input_w//2, args.input_h//2),
                                                 anchors,
                                                 k=args.local_k)
 

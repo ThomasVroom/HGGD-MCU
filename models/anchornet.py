@@ -136,7 +136,7 @@ class AnchorGraspNet(nn.Module):
                     self.trconv.append(upsampleconvolution(cur_dim, dim))
             else:
                 if i < min(5 - np.log2(ratio), 2): # padding is hard-coded (!)
-                    self.trconv.append(trconvolution(cur_dim, dim, padding=(1, 2), output_padding=(0, 1)))
+                    self.trconv.append(trconvolution(cur_dim, dim, padding=1, output_padding=0))
                 else:
                     self.trconv.append(trconvolution(cur_dim, dim))
             cur_dim = dim

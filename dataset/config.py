@@ -1,29 +1,19 @@
-import logging
-
 import numpy as np
-import open3d as o3d
 
-camera = 'realsense'
-logging.warn(f'Using {camera} camera now!')
+ORI_WIDTH = 1280
+ORI_HEIGHT = 720
+width = ORI_WIDTH
+height = ORI_HEIGHT
 
+def set_resolution(w, h):
+    global width, height
+    width = w
+    height = h
 
-def get_camera_intrinsic(camera=camera):
-    if camera == 'kinect':
-        intrinsics = np.array([[631.55, 0, 638.43], [0, 631.21, 366.50],
-                               [0, 0, 1]])
-    elif camera == 'realsense':
-        intrinsics = np.array([[927.17, 0, 651.32], [0, 927.37, 349.62],
-                               [0, 0, 1]])
-    else:
-        raise ValueError(
-            'Camera format must be either "kinect" or "realsense".')
+def get_camera_intrinsic():
+    intrinsics = np.array([ # resize intrinsics: https://answers.opencv.org/question/150551
+        (np.array([927.16973877, 0           , 651.31506348]) * (width / ORI_WIDTH)),
+        (np.array([0           , 927.36688232, 349.62133789]) * (height / ORI_HEIGHT)),
+        (np.array([0           , 0           , 1           ]))
+    ])
     return intrinsics
-
-
-# # realsense
-# intrinsics = np.array([[927.16973877, 0, 651.31506348],
-#                        [0, 927.36688232, 349.62133789], [0, 0, 1]])
-
-# # kinect
-# intrinsics = np.array([[631.55, 0, 638.43],
-#                        [0, 631.21, 366.50], [0, 0, 1]])
