@@ -371,7 +371,11 @@ if __name__ == '__main__':
                 input_names=["pointcloud"],
                 output_names=[
                     "pointnet_features"
-                ]
+                ],
+                dynamic_axes={
+                    "pointcloud": {0: "n_valid_grasps"},
+                    "pointnet_features": {0: "n_valid_grasps"}
+                }
             )
             print("pointnet.onnx saved")
 
@@ -386,6 +390,12 @@ if __name__ == '__main__':
                 output_names=[
                     "anchor_pred",
                     "offset_pred"
-                ]
+                ],
+                dynamic_axes={
+                    "pointnet_features": {0: "n_valid_grasps"},
+                    "grasp_info": {0: "n_valid_grasps"},
+                    "anchor_pred": {0: "n_valid_grasps"},
+                    "offset_pred": {0: "n_valid_grasps"}
+                }
             )
             print("localnet.onnx saved")
