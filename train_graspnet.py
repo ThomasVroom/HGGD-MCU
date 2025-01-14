@@ -592,11 +592,11 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
             
             if anchornet_params:
                 nn.utils.clip_grad.clip_grad_value_(anchornet_params, 1)
-                print("Succesfully clipped anchornet's gradients")
+                #print("Succesfully clipped anchornet's gradients")
 
             if localnet_params:
                 nn.utils.clip_grad.clip_grad_value_(localnet_params, 1)
-                print("Succesfully clipped localnet's gradients")
+                #print("Succesfully clipped localnet's gradients")
 
             optimizer.step()
             optimizer.zero_grad()
