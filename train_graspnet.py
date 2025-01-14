@@ -107,7 +107,7 @@ parser.add_argument('--description', type=str, default='realsense',
 # Extra features / Flags
 # --------------------------
 parser.add_argument('--joint-trainning', action='store_true',
-                    help='Enable joint training if set')
+                    help='Enable joint training if set', default=True)
 
 parser.add_argument('--logdir',
                     type=str,
@@ -118,7 +118,7 @@ parser.add_argument('--random-seed', type=int, default=123, help='Random seed')
 
 # !!!!!! THE FOLLOWING PARAMETERS ARE DECIDED BY US !!!!!!
 
-parser.add_argument('--pre-epochs', type=int, default=5,
+parser.add_argument('--pre-epochs', type=int, default=0,
                     help='Number of epochs to train AnchorNet alone before LocalNet is activated')
 
 parser.add_argument('--shift-epoch', type=int, default=2,
@@ -408,6 +408,7 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
     optimizer.zero_grad()
     anchornet.train()
     localnet.train()
+    
 
     if args.joint_trainning:
         train_data.dataset.unaug()
@@ -582,11 +583,21 @@ def train(epoch, anchornet: nn.Module, localnet: nn.Module,
 
         # backward every step
         loss.backward()
-
+        
         # step sum loss
         if batch_idx > 0 and batch_idx % args.step_cnt == 0:
-            nn.utils.clip_grad.clip_grad_value_(anchornet.parameters(), 1)
-            nn.utils.clip_grad.clip_grad_value_(localnet.parameters(), 1)
+            
+            anchornet_params = [p for p in anchornet.parameters() if p.grad is not None]
+            localnet_params = [p for p in localnet.parameters() if p.grad is not None]
+            
+            if anchornet_params:
+                nn.utils.clip_grad.clip_grad_value_(anchornet_params, 1)
+                print("Succesfully clipped anchornet's gradients")
+
+            if localnet_params:
+                nn.utils.clip_grad.clip_grad_value_(localnet_params, 1)
+                print("Succesfully clipped localnet's gradients")
+
             optimizer.step()
             optimizer.zero_grad()
 
