@@ -116,7 +116,7 @@ class GraspnetPointDataset(GraspnetAnchorDataset):
         super().__init__(*args, **kwargs)
         # for pc convert
         self.all_points_num = all_points_num
-        self.helper = PointCloudHelper(self.all_points_num)
+        self.helper = PointCloudHelper(self.all_points_num, kwargs['output_size'])
 
     def get_camera_pose(self, index):
         camera_pose = np.load(self.cameraposepath[index // 256])
