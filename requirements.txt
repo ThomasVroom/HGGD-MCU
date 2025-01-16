@@ -13,4 +13,3 @@ transforms3d
 trimesh
 autolab_core
 cvxopt
-onnx

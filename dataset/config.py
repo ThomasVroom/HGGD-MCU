@@ -1,7 +1,5 @@
 import numpy as np
 
-camera = "realsense"
-
 ORI_WIDTH = 1280
 ORI_HEIGHT = 720
 width = ORI_WIDTH

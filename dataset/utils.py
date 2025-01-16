@@ -190,40 +190,41 @@ def fast_sample(num_samples, sample_size):
 
 class PointCloudHelper:
 
-    def __init__(self, all_points_num, input_ratio) -> None:
+    def __init__(self, all_points_num) -> None:
         # precalculate x,y map
-        self.all_points_num = all_points_num  # number of points in point cloud
-        self.output_shape = (input_ratio[0]//8, input_ratio[1]//8) # downsampled aspect ratio of input image
-
+        self.all_points_num = all_points_num
+        self.output_shape = (80, 45)
         # get intrinsics
         intrinsics = get_camera_intrinsic()
         fx, fy = intrinsics[0, 0], intrinsics[1, 1]
         cx, cy = intrinsics[0, 2], intrinsics[1, 2]
-
-        # calculate x, y regions
-        ymap, xmap = np.meshgrid(np.arange(input_ratio[1]), np.arange(input_ratio[0]))
+        # cal x, y
+        ymap, xmap = np.meshgrid(np.arange(720), np.arange(1280))
         points_x = (xmap - cx) / fx
         points_y = (ymap - cy) / fy
         self.points_x = torch.from_numpy(points_x).float()
         self.points_y = torch.from_numpy(points_y).float()
-
-        # for to_xyz_maps()
-        ymap, xmap = np.meshgrid(np.arange(self.output_shape[1]), np.arange(self.output_shape[0]))
-        factor = input_ratio[0] / self.output_shape[0]
+        # for get downsampled xyz map
+        ymap, xmap = np.meshgrid(np.arange(self.output_shape[1]),
+                                 np.arange(self.output_shape[0]))
+        factor = 1280 / self.output_shape[0]
         points_x = (xmap - cx / factor) / (fx / factor)
         points_y = (ymap - cy / factor) / (fy / factor)
         self.points_x_downscale = torch.from_numpy(points_x).float()
         self.points_y_downscale = torch.from_numpy(points_y).float()
 
-    # turn rgb + depth into point cloud
-    def to_scene_points(self, rgbs: torch.Tensor, depths: torch.Tensor, include_rgb=True):
+    def to_scene_points(self,
+                        rgbs: torch.Tensor,
+                        depths: torch.Tensor,
+                        include_rgb=True):
         batch_size = rgbs.shape[0]
         feature_len = 3 + 3 * include_rgb
-        points_all = -torch.ones((batch_size, self.all_points_num, feature_len), dtype=torch.float32)
+        points_all = -torch.ones(
+            (batch_size, self.all_points_num, feature_len),
+            dtype=torch.float32)
         if gpu:
             points_all = points_all.cuda()
-
-        # calculate z
+        # cal z
         idxs = []
         masks = (depths > 0)
         cur_zs = depths / 1000.0
@@ -241,7 +242,7 @@ class PointCloudHelper:
             points = points[mask]
             colors = rgbs[i][:, mask].T
 
-            # random sample if too many points
+            # random sample if points more than required
             if len(points) >= self.all_points_num:
                 cur_idxs = fast_sample(len(points), self.all_points_num)
                 points = points[cur_idxs]
@@ -256,10 +257,11 @@ class PointCloudHelper:
                 points_all[i] = points
         return points_all, idxs, masks
 
-    # get a downsampled xyz map
     def to_xyz_maps(self, depths):
         # downsample
-        downsample_depths = nnf.interpolate(depths[:, None], size=self.output_shape, mode='nearest').squeeze(1)
+        downsample_depths = nnf.interpolate(depths[:, None],
+                                            size=self.output_shape,
+                                            mode='nearest').squeeze(1)
         if gpu:
             downsample_depths = downsample_depths.cuda()
         # convert xyzs
@@ -271,4 +273,4 @@ class PointCloudHelper:
             cur_xs = self.points_x_downscale * cur_zs
             cur_ys = self.points_y_downscale * cur_zs
         xyzs = torch.stack([cur_xs, cur_ys, cur_zs], axis=-1)
-        return xyzs.permute(0, 3, 1, 2)
+        return xyzs.transpose(1, 3).transpose(2, 3)

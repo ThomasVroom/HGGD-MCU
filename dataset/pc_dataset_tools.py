@@ -142,7 +142,7 @@ def center2dtopc(rect_ggs: List,
     batch_size = depths.shape[0]
     center_batch_pc = []
 
-    scale_x, scale_y = input_size[0] / 1280, input_size[1] / 720
+    scale_x, scale_y = 2, 2
     for i in range(batch_size):
         center_2d = rect_ggs[i].centers.copy()
         center_depth = rect_ggs[i].depths.copy()
@@ -162,8 +162,6 @@ def center2dtopc(rect_ggs: List,
         center_2d[:, 1] = center_2d[:, 1] * scale_y
         # mask d != 0
         d = depths[i, center_2d[:, 0], center_2d[:, 1]]
-        if gpu:
-            d = d.cuda()
         mask = (d != 0)
         # convert
         intrinsics = get_camera_intrinsic()

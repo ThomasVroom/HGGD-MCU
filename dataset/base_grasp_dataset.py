@@ -1,7 +1,9 @@
 import os
 import random
+import time
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
 import torch
@@ -76,7 +78,8 @@ class GraspDataset:
 
     def get_depth(self, index, rot=0, zoom=1.0):
         # using pillow-simd to speed up
-        depth = Image.open(self.depthpath[index]).resize(self.output_size, Image.Resampling.NEAREST)
+        depth = Image.open(self.depthpath[index])
+        # add noise
         depth = np.array(depth, dtype=np.float32)
         if self.trainning:
             # gaussian noise
@@ -110,14 +113,14 @@ class GraspDataset:
             depth = depth.crop(
                 (sr, sc, depth.size[0] - sr, depth.size[1] - sc))
         # resize
-        depth = depth.resize(self.output_size, Image.Resampling.NEAREST)
+        depth = depth.resize(self.output_size)
         depth = np.array(depth, np.float32) / 1000.0
         depth = np.clip((depth - depth.mean()), -1, 1)
         return depth.T
 
     def get_rgb(self, index, rot=0, zoom=1.0):
         # using pillow-simd to speed up
-        rgb = Image.open(self.colorpath[index]).resize(self.output_size, Image.Resampling.LANCZOS)
+        rgb = Image.open(self.colorpath[index])
         # aug
         if self.trainning:
             # jitter and gaussian noise
@@ -133,7 +136,7 @@ class GraspDataset:
             sc = int(rgb.size[1] * (1 - zoom)) // 2
             rgb = rgb.crop((sr, sc, rgb.size[0] - sr, rgb.size[1] - sc))
         # resize
-        rgb = rgb.resize(self.output_size, Image.Resampling.LANCZOS)
+        rgb = rgb.resize(self.output_size)
         rgb = np.array(rgb, np.float32) / 255.0
         rgb = rgb.transpose((2, 1, 0))
         return rgb
@@ -195,7 +198,7 @@ class GraspDataset:
                 continue
             # cal depth offset from original depth
             neighbor = 2
-            x, y = center * self.output_size[0] // 1280
+            x, y = center * 1280 // self.output_size[0]
             left, right = max(0, x - neighbor), min(1279, x + neighbor)
             top, bottom = max(0, y - neighbor), min(719, y + neighbor)
             d = np.median(self.cur_depth[left:right, top:bottom])
