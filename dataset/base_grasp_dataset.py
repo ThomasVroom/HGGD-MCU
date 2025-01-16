@@ -1,9 +1,7 @@
 import os
 import random
-import time
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
 import torch
@@ -14,7 +12,6 @@ from dataset.grasp import RectGraspGroup
 
 from .config import camera
 
-
 def gaussian2D(shape, sigma=1):
     m, n = [(ss - 1.) / 2. for ss in shape]
     y, x = np.ogrid[-m:m + 1, -n:n + 1]
@@ -22,7 +19,6 @@ def gaussian2D(shape, sigma=1):
     h = np.exp(-(x * x + y * y) / (2 * sigma * sigma))
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
     return h
-
 
 def draw_umich_gaussian(heatmap, center, radius, k=1):
     diameter = 2 * radius + 1
@@ -42,16 +38,13 @@ def draw_umich_gaussian(heatmap, center, radius, k=1):
         np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
     return heatmap
 
-
 def draw_rectangle(heatmap, points):
     rr, cc = polygon(points[:, 0], points[:, 1])
     mask = np.logical_and(rr < heatmap.shape[0], cc < heatmap.shape[1])
     heatmap[rr[mask], cc[mask]] = 1
     return heatmap
 
-
 noise_scale = 20
-
 
 class GraspDataset:
 
@@ -78,8 +71,7 @@ class GraspDataset:
 
     def get_depth(self, index, rot=0, zoom=1.0):
         # using pillow-simd to speed up
-        depth = Image.open(self.depthpath[index])
-        # add noise
+        depth = Image.open(self.depthpath[index]).resize(self.output_size, Image.Resampling.NEAREST)
         depth = np.array(depth, dtype=np.float32)
         if self.trainning:
             # gaussian noise
@@ -113,14 +105,14 @@ class GraspDataset:
             depth = depth.crop(
                 (sr, sc, depth.size[0] - sr, depth.size[1] - sc))
         # resize
-        depth = depth.resize(self.output_size)
+        depth = depth.resize((self.output_size[0]//2, self.output_size[1]//2), Image.Resampling.NEAREST)
         depth = np.array(depth, np.float32) / 1000.0
         depth = np.clip((depth - depth.mean()), -1, 1)
         return depth.T
 
     def get_rgb(self, index, rot=0, zoom=1.0):
         # using pillow-simd to speed up
-        rgb = Image.open(self.colorpath[index])
+        rgb = Image.open(self.colorpath[index]).resize(self.output_size, Image.Resampling.LANCZOS)
         # aug
         if self.trainning:
             # jitter and gaussian noise
@@ -136,7 +128,7 @@ class GraspDataset:
             sc = int(rgb.size[1] * (1 - zoom)) // 2
             rgb = rgb.crop((sr, sc, rgb.size[0] - sr, rgb.size[1] - sc))
         # resize
-        rgb = rgb.resize(self.output_size)
+        rgb = rgb.resize((self.output_size[0]//2, self.output_size[1]//2), Image.Resampling.LANCZOS)
         rgb = np.array(rgb, np.float32) / 255.0
         rgb = rgb.transpose((2, 1, 0))
         return rgb
@@ -198,7 +190,7 @@ class GraspDataset:
                 continue
             # cal depth offset from original depth
             neighbor = 2
-            x, y = center * 1280 // self.output_size[0]
+            x, y = center * self.output_size[0] // 1280
             left, right = max(0, x - neighbor), min(1279, x + neighbor)
             top, bottom = max(0, y - neighbor), min(719, y + neighbor)
             d = np.median(self.cur_depth[left:right, top:bottom])

@@ -12,6 +12,7 @@ from dataset.config import set_resolution, get_camera_intrinsic
 from dataset.evaluation import (anchor_output_process, collision_detect,
                                 detect_2d_grasp, detect_6d_grasp_multi)
 from dataset.pc_dataset_tools import data_process, feature_fusion
+from dataset.utils import PointCloudHelper
 from models.anchornet import AnchorGraspNet, Backbone
 from models.localgraspnet import PointMultiGraspNet
 from models.pointnet import PointNetfeat
@@ -31,8 +32,8 @@ parser.add_argument('--export-onnx', type=bool, default=False) # export .onnx fi
 parser.add_argument('--sigma', type=int, default=10)
 parser.add_argument('--ratio', type=int, default=8) # grasp attributes prediction downsample ratio, must be 2^N
 parser.add_argument('--anchor-k', type=int, default=6) # in-plane rotation anchor number
-parser.add_argument('--anchor-w', type=float, default=50.0) # grasp width anchor size
-parser.add_argument('--anchor-z', type=float, default=20.0) # grasp depth anchor size
+parser.add_argument('--anchor-w', type=float, default=50.0/2) # grasp width anchor size
+parser.add_argument('--anchor-z', type=float, default=20.0/2) # grasp depth anchor size
 parser.add_argument('--grid-size', type=int, default=8) # grid size for grid-based center sampling
 parser.add_argument('--feature-dim', type=int, default=128) # feature dimension for anchor net
 
@@ -40,7 +41,7 @@ parser.add_argument('--feature-dim', type=int, default=128) # feature dimension 
 parser.add_argument('--heatmap-thres', type=float, default=0.01) # heatmap threshold
 parser.add_argument('--local-k', type=int, default=10) # grasp detection number in each local region (localnet)
 parser.add_argument('--depth-thres', type=float, default=0.01) # depth threshold for collision detection
-parser.add_argument('--max-points', type=int, default=25600) # downsampled max number of points in point cloud
+parser.add_argument('--max-points', type=int, default=25600//2) # downsampled max number of points in point cloud
 parser.add_argument('--anchor-num', type=int, default=7) # spatial rotation anchor number
 parser.add_argument('--center-num', type=int, default=64) # sampled local center/region number
 parser.add_argument('--group-num', type=int, default=512) # local region fps number
@@ -48,91 +49,6 @@ parser.add_argument('--group-num', type=int, default=512) # local region fps num
 args = parser.parse_args()
 
 # --------------------------------------------------------------------------- #
-
-class PointCloudHelper:
-
-    def __init__(self) -> None:
-        # precalculate x,y map
-        self.all_points_num = args.max_points
-        self.output_shape = (args.input_w//16, args.input_h//16) # downsampled aspect ratio of input image
-
-        # get intrinsics
-        intrinsics = get_camera_intrinsic()
-        fx, fy = intrinsics[0, 0], intrinsics[1, 1]
-        cx, cy = intrinsics[0, 2], intrinsics[1, 2]
-
-        # calculate x, y regions
-        ymap, xmap = np.meshgrid(np.arange(args.input_h), np.arange(args.input_w))
-        points_x = (xmap - cx) / fx
-        points_y = (ymap - cy) / fy
-        self.points_x = torch.from_numpy(points_x).float()
-        self.points_y = torch.from_numpy(points_y).float()
-
-        # for to_xyz_maps()
-        ymap, xmap = np.meshgrid(np.arange(self.output_shape[1]), np.arange(self.output_shape[0]))
-        factor = args.input_w / self.output_shape[0]
-        points_x = (xmap - cx / factor) / (fx / factor)
-        points_y = (ymap - cy / factor) / (fy / factor)
-        self.points_x_downscale = torch.from_numpy(points_x).float()
-        self.points_y_downscale = torch.from_numpy(points_y).float()
-
-    # turn rgb + depth into point cloud
-    def to_scene_points(self, rgbs: torch.Tensor, depths: torch.Tensor, include_rgb=True):
-        batch_size = rgbs.shape[0]
-        feature_len = 3 + 3 * include_rgb
-        points_all = -torch.ones((batch_size, self.all_points_num, feature_len), dtype=torch.float32)
-        if gpu:
-            points_all = points_all.cuda()
-
-        # calculate z
-        idxs = []
-        masks = (depths > 0)
-        cur_zs = depths / 1000.0
-        if gpu:
-            cur_xs = self.points_x.cuda() * cur_zs
-            cur_ys = self.points_y.cuda() * cur_zs
-        else:
-            cur_xs = self.points_x * cur_zs
-            cur_ys = self.points_y * cur_zs
-        for i in range(batch_size):
-            # convert point cloud to xyz maps
-            points = torch.stack([cur_xs[i], cur_ys[i], cur_zs[i]], axis=-1)
-            # remove zero depth
-            mask = masks[i]
-            points = points[mask]
-            colors = rgbs[i][:, mask].T
-
-            # random sample if too many points
-            if len(points) >= self.all_points_num:
-                cur_idxs = random.sample(range(len(points)), self.all_points_num)
-                points = points[cur_idxs]
-                colors = colors[cur_idxs]
-                # save idxs for concat fusion
-                idxs.append(cur_idxs)
-
-            # concat rgb and features after translation
-            if include_rgb:
-                points_all[i] = torch.concat([points, colors], axis=1)
-            else:
-                points_all[i] = points
-        return points_all, idxs, masks
-
-    # get a downsampled xyz map
-    def to_xyz_maps(self, depths):
-        # downsample
-        downsample_depths = F.interpolate(depths[:, None], size=self.output_shape).squeeze(1)
-        if gpu:
-            downsample_depths = downsample_depths.cuda()
-        # convert xyzs
-        cur_zs = downsample_depths / 1000.0
-        if gpu:
-            cur_xs = self.points_x_downscale.cuda() * cur_zs
-            cur_ys = self.points_y_downscale.cuda() * cur_zs
-        else:
-            cur_xs = self.points_x_downscale * cur_zs
-            cur_ys = self.points_y_downscale * cur_zs
-        xyzs = torch.stack([cur_xs, cur_ys, cur_zs], axis=-1)
-        return xyzs.permute(0, 3, 1, 2)
 
 if __name__ == '__main__':
     # set torch and gpu setting
@@ -151,7 +67,7 @@ if __name__ == '__main__':
     # init the model
     resnet = Backbone(in_dim=4, planes=args.feature_dim//16, mode='18')
     anchornet = AnchorGraspNet(feature_dim=args.feature_dim, ratio=args.ratio, anchor_k=args.anchor_k)
-    pointnet = PointNetfeat(feature_len=3, use_bn=(not args.export_onnx)) # don't include bn in onnx
+    pointnet = PointNetfeat(feature_len=3)
     localnet = PointMultiGraspNet(info_size=3, k_cls=args.anchor_num**2)
     if gpu:
         resnet = resnet.cuda()
@@ -177,7 +93,9 @@ if __name__ == '__main__':
     print("beta anchors", anchors['beta'])
 
     # network eval mode
+    resnet.eval()
     anchornet.eval()
+    pointnet.eval()
     localnet.eval()
 
     # read image and convert to tensor
@@ -193,7 +111,7 @@ if __name__ == '__main__':
     print("camera_intrinsics:", get_camera_intrinsic()[0], get_camera_intrinsic()[1])
 
     # get scene points and xyz maps
-    pc_helper = PointCloudHelper()
+    pc_helper = PointCloudHelper(args.max_points, (args.input_w, args.input_h))
     view_points, _, _ = pc_helper.to_scene_points(ori_rgb, ori_depth)
     xyzs = pc_helper.to_xyz_maps(ori_depth)
     print("view_points:", view_points.shape) # 3rd dimension: [x, y, z, r, g, b]
@@ -266,7 +184,6 @@ if __name__ == '__main__':
                 "resnet.onnx",              # file to save
                 export_params=True,         # store the trained parameter weights inside the onnx file
                 opset_version=11,           # ONNX opset version
-                do_constant_folding=True,   # fold constant ops for optimization
                 input_names=["rgbd_image"],
                 output_names=[
                     "layer_1_features",
@@ -284,7 +201,6 @@ if __name__ == '__main__':
                 "anchornet.onnx",           # file to save
                 export_params=True,         # store the trained parameter weights inside the onnx file
                 opset_version=11,           # ONNX opset version
-                do_constant_folding=True,   # fold constant ops for optimization
                 input_names=[
                     "layer_1_features",
                     "layer_2_features",
@@ -367,7 +283,6 @@ if __name__ == '__main__':
                 "pointnet.onnx",            # file to save
                 export_params=True,         # store the trained parameter weights inside the onnx file
                 opset_version=11,           # ONNX opset version
-                do_constant_folding=True,   # fold constant ops for optimization
                 input_names=["pointcloud"],
                 output_names=[
                     "pointnet_features"
@@ -385,7 +300,6 @@ if __name__ == '__main__':
                 "localnet.onnx",            # file to save
                 export_params=True,         # store the trained parameter weights inside the onnx file
                 opset_version=11,           # ONNX opset version
-                do_constant_folding=True,   # fold constant ops for optimization
                 input_names=["pointnet_features", "grasp_info"],
                 output_names=[
                     "anchor_pred",

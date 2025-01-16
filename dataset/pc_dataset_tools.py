@@ -142,10 +142,12 @@ def center2dtopc(rect_ggs: List,
     batch_size = depths.shape[0]
     center_batch_pc = []
 
-    scale_x, scale_y = 2, 2
+    scale_x, scale_y = 2, 2 # since we divide input_size by 2 before anchornet, we need to scale back
     for i in range(batch_size):
         center_2d = rect_ggs[i].centers.copy()
         center_depth = rect_ggs[i].depths.copy()
+
+        depths = depths.cpu() # prevents random cuda errors
 
         # add random center when local max count not enough
         if append_random_center and len(center_2d) < center_num:
@@ -162,6 +164,8 @@ def center2dtopc(rect_ggs: List,
         center_2d[:, 1] = center_2d[:, 1] * scale_y
         # mask d != 0
         d = depths[i, center_2d[:, 0], center_2d[:, 1]]
+        if gpu:
+            d = d.cuda()
         mask = (d != 0)
         # convert
         intrinsics = get_camera_intrinsic()
@@ -184,8 +188,8 @@ def center2dtopc(rect_ggs: List,
             x, y = center_2d[j, 0], center_2d[j, 1]
             # choose neighbor average to fix zero depth
             neighbor = 4
-            x_range = slice(max(0, x - neighbor), min(1279, x + neighbor))
-            y_range = slice(max(0, y - neighbor), min(719, y + neighbor))
+            x_range = slice(max(0, x - neighbor), min(input_size[0]-1, x + neighbor))
+            y_range = slice(max(0, y - neighbor), min(input_size[1]-1, y + neighbor))
             neighbor_depths = depths[i, x_range, y_range]
             depth_mask = (neighbor_depths > 0)
             if depth_mask.sum() == 0:
@@ -193,8 +197,7 @@ def center2dtopc(rect_ggs: List,
                 # this will use all centers
                 cur_d = depths[i].mean()
             else:
-                cur_d = neighbor_depths[depth_mask].float().median(
-                ) + delta_d[j]
+                cur_d = neighbor_depths[depth_mask].float().median() + delta_d[j]
             # set valid mask
             mask[j] = True
             # convert
