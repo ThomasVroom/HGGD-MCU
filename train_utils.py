@@ -323,7 +323,9 @@ def log_and_save(args,
                  tb,
                  results,
                  epoch,
+                 resnet,
                  anchornet,
+                 pointnet,
                  localnet,
                  optimizer,
                  anchors,
@@ -390,8 +392,10 @@ def log_and_save(args,
         if epoch < args.pre_epochs:
             torch.save(
                 {
-                    'anchor': anchornet.module.state_dict(),
-                    'local': localnet.module.state_dict(),
+                    'resnet': resnet.module.state_dict(),
+                    'anchornet': anchornet.module.state_dict(),
+                    'pointnet': pointnet.module.state_dict(),
+                    'localnet': localnet.module.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'gamma': anchors['gamma'],
                     'beta': anchors['beta']
@@ -399,8 +403,10 @@ def log_and_save(args,
         elif mode == 'regnet':
             torch.save(
                 {
-                    'anchor': anchornet.module.state_dict(),
-                    'local': localnet.module.state_dict(),
+                    'resnet': resnet.module.state_dict(),
+                    'anchornet': anchornet.module.state_dict(),
+                    'pointnet': pointnet.module.state_dict(),
+                    'localnet': localnet.module.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'gamma': anchors['gamma'],
                     'beta': anchors['beta']
@@ -412,8 +418,10 @@ def log_and_save(args,
         elif mode == 'graspnet':
             torch.save(
                 {
-                    'anchor': anchornet.module.state_dict(),
-                    'local': localnet.module.state_dict(),
+                    'resnet': resnet.module.state_dict(),
+                    'anchornet': anchornet.module.state_dict(),
+                    'pointnet': pointnet.module.state_dict(),
+                    'localnet': localnet.module.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'gamma': anchors['gamma'],
                     'beta': anchors['beta']
