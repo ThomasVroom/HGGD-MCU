@@ -172,7 +172,7 @@ class AnchorGraspNet(nn.Module):
             # down sample classification mask
             if x.shape[1] == 32:
                 features = x.detach()
-                print(f"extracted features in layer {i} with shape {features.shape}")
+                # print(f"extracted features in layer {i} with shape {features.shape}")
             if int(np.log2(self.ratio)) == self.depth - i:
                 cls_mask = self.cls_mask_conv(x)
                 theta_offset = self.theta_offset_conv(x)

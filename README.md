@@ -11,6 +11,8 @@ I am running with:
 4. Run `install.bat` in the venv (this might take 10-15 minutes).
 5. Run `demo.py`.
 
+Training Logs: `tensorboard --logdir=./logs/`
+
 --------------------------------------------
 
 <h2 align="center">
@@ -34,7 +36,7 @@ Official code of paper [Efficient Heatmap-Guided 6-Dof Grasp Detection in Clutte
 
 # Framework
 
-![framework](./images/framework.jpg)
+![framework](./resources/framework.jpg)
 
 # Requirements
 

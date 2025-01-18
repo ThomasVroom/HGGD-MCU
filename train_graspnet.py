@@ -41,15 +41,17 @@ parser.add_argument('--lr', type=float, default=1e-2) # learning rate
 # --------------------------
 parser.add_argument('--anchor-num', type=int, default=7) # spatial rotation anchor number
 parser.add_argument('--anchor-k', type=int, default=6) # in-plane rotation anchor number
-parser.add_argument('--anchor-w', type=float, default=50.0/2) # grasp width anchor size
-parser.add_argument('--anchor-z', type=float, default=20.0/2) # grasp depth anchor size
+parser.add_argument('--anchor-w', type=float, default=50.0/4) # grasp width anchor size
+parser.add_argument('--anchor-z', type=float, default=20.0/4) # grasp depth anchor size
 parser.add_argument('--all-points-num', type=int, default=25600//2) # downsampled max number of points in point cloud
-parser.add_argument('--group-num', type=int, default=512) # local region fps number
-parser.add_argument('--center-num', type=int, default=128) # sampled local center/region number
-parser.add_argument('--scene-l', type=int, default=101)
-parser.add_argument('--scene-r', type=int, default=102)
+parser.add_argument('--group-num', type=int, default=512//2) # local region pc number
+parser.add_argument('--center-num', type=int, default=128//2) # sampled local center/region number
+parser.add_argument('--val-scene-l', type=int, default=100)
+parser.add_argument('--val-scene-r', type=int, default=101)
+parser.add_argument('--scene-l', type=int, default=100)
+parser.add_argument('--scene-r', type=int, default=101)
 parser.add_argument('--noise', type=int, default=0)
-parser.add_argument('--grid-size', type=int, default=8) # grid size for grid-based center sampling
+parser.add_argument('--grid-size', type=int, default=8//2) # grid size for grid-based center sampling
 parser.add_argument('--feature-dim', type=int, default=128) # feature dimension for anchor net
 parser.add_argument('--heatmap-thres', type=float, default=0.01) # heatmap threshold
 parser.add_argument('--local-k', type=int, default=10) # grasp detection number in each local region (localnet)
@@ -72,18 +74,16 @@ parser.add_argument('--offset-d', type=int, default=1) # offset loss weight
 # --------------------------
 # General training settings
 # --------------------------
-parser.add_argument('--epochs', type=int, default=1) # number of epochs
+parser.add_argument('--epochs', type=int, default=10) # number of epochs
 parser.add_argument('--ratio', type=int, default=8) # grasp attributes prediction downsample ratio, must be 2^N
 parser.add_argument('--num-workers', type=int, default=4) # number of workers for data loading
 parser.add_argument('--save-freq', type=int, default=1) # frequency to save checkpoints (in epochs)
 parser.add_argument('--optim', type=str, default='adamw') # optimizer type (adamw, adam, sgd, etc.)
-parser.add_argument('--val-scene-l', type=int, default=100)
-parser.add_argument('--val-scene-r', type=int, default=101)
 
 # --------------------------
 # Dataset / Logging
 # --------------------------
-parser.add_argument('--grasp-count', type=int, default=5000)
+parser.add_argument('--grasp-count', type=int, default=5000//2)
 parser.add_argument('--dump-dir', default='./pred/test') # directory to save predictions
 parser.add_argument('--dataset-path', type=str, default='./data/6dto2drefine_realsense') # path to the dataset
 parser.add_argument('--scene-path', type=str, default='./graspnet') # path to the graspnet scenes
@@ -97,9 +97,8 @@ parser.add_argument('--logdir', type=str, default='./logs/') # logging directory
 parser.add_argument('--random-seed', type=int, default=1)
 
 # !!!!!! THE FOLLOWING PARAMETERS ARE SET MANUALLY !!!!!!
-parser.add_argument('--pre-epochs', type=int, default=0) # number of epochs to train AnchorNet alone before LocalNet is activated
-parser.add_argument('--shift-epoch', type=int, default=2) # until this epoch, keep shifting gamma/beta anchors
-parser.add_argument('--local-grasp-num', type=int, default=500) # max. number of local grasps per batch for LocalNet
+parser.add_argument('--pre-epochs', type=int, default=0) # number of epochs to train AnchorNet alone (broken; keep at 0)
+parser.add_argument('--local-grasp-num', type=int, default=256) # max. number of local grasps per batch for LocalNet
 parser.add_argument('--checkpoint-path', default=None) # path to a checkpoint to load
 
 args = parser.parse_args()
@@ -230,12 +229,12 @@ def validate(epoch,
                 pc_group, valid_local_centers, new_rect_ggs = data_process(
                     points_all,
                     depth,
-                    [rect_gg], # TODO: check if this works correctly
+                    [rect_gg],
                     args.center_num,
                     args.group_num,
                     (args.input_w, args.input_h),
                     is_training=False)
-                rect_gg = new_rect_ggs[0]  # maybe modify in data process
+                rect_gg = new_rect_ggs[0]
                 # batch_size == 1 when valid
                 points_all = points_all.squeeze()
 
@@ -278,7 +277,7 @@ def validate(epoch,
                     pred_view,
                     offset,
                     valid_local_centers,
-                    (args.input_w//2, args.input_h//2), # TODO: is this necessary?
+                    (args.input_w, args.input_h),
                     anchors,
                     k=args.local_k)
                 pred_grasp = torch.from_numpy(pred_grasp).to(device='cuda', dtype=torch.float32)
@@ -400,6 +399,7 @@ def train(epoch,
     sum_offset_loss = 0
     sum_anchor_loss = 0
     sum_anchor_loss_d = {'loc_map_loss': 0, 'reg_loss': 0, 'cls_loss': 0}
+    shift_epoch = args.epochs
 
     # for anchor shift
     cur_labels = torch.zeros((0, 8), dtype=torch.float32)
@@ -475,15 +475,16 @@ def train(epoch,
             # crop local pcs
             if gpu:
                 depths = depths.cuda()
-            pc_group, valid_local_centers, _ = data_process(
+            pc_group, valid_local_centers, new_rect_ggs = data_process(
                 points_all,
                 depths,
-                rect_ggs, # TODO: check if this works correctly
+                rect_ggs,
                 args.center_num,
                 args.group_num,
                 (args.input_w, args.input_h),
                 is_training=False
             )
+            rect_ggs = new_rect_ggs
 
             # get 2d grasp info (not grasp itself) for training
             grasp_info = np.zeros((0, 3), dtype=np.float32)
@@ -516,7 +517,7 @@ def train(epoch,
                 valid_center_num += len(gg) > 0
 
             # shift anchors only for first serveral epochs
-            if epoch < args.shift_epoch:
+            if epoch < shift_epoch:
                 cur_labels = torch.cat([cur_labels, total_labels.cpu()], 0)
                 if len(cur_labels) > 1e6:
                     shift_start = time()
@@ -530,8 +531,8 @@ def train(epoch,
                     logging.info(f'shift time == {time() - shift_start:.3f}')
                     cur_labels = torch.zeros((0, 8), dtype=torch.float32)
                     # stop when stable
-                    # if error < 1e-2:
-                    #     shift_epoch = 0
+                    if error < 1e-2:
+                        shift_epoch = 0
 
             # get loss
             multi_cls_loss, offset_loss = compute_multicls_loss(pred_view, offset, gg_labels, grasp_info, anchors, args)
@@ -702,8 +703,10 @@ if __name__ == '__main__':
             anchors['gamma'] = ckpt['gamma']
             anchors['beta'] = ckpt['beta']
             logging.info('Using saved anchors')
-        anchornet.load_state_dict(ckpt['anchor'])
-        localnet.load_state_dict(ckpt['local'])
+        resnet.load_state_dict(ckpt['resnet'])
+        anchornet.load_state_dict(ckpt['anchornet'])
+        pointnet.load_state_dict(ckpt['pointnet'])
+        localnet.load_state_dict(ckpt['localnet'])
 
     # set optimizer
     params = itertools.chain(anchornet.parameters(), localnet.parameters())

@@ -142,7 +142,7 @@ def center2dtopc(rect_ggs: List,
     batch_size = depths.shape[0]
     center_batch_pc = []
 
-    scale_x, scale_y = 2, 2 # since we divide input_size by 2 before anchornet, we need to scale back
+    scale_x, scale_y = 2, 2 # ratio of original image to input size
     for i in range(batch_size):
         center_2d = rect_ggs[i].centers.copy()
         center_depth = rect_ggs[i].depths.copy()

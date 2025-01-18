@@ -11,6 +11,8 @@ pred*/
 pytorch3d/
 realsense_checkpoint
 data/
+resources/retrained_checkpoint
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

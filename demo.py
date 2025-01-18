@@ -18,12 +18,12 @@ from models.localgraspnet import PointMultiGraspNet
 from models.pointnet import PointNetfeat
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint-path', default='realsense_checkpoint')
+parser.add_argument('--checkpoint-path', default='resources/retrained_checkpoint')
 parser.add_argument('--random-seed', type=int, default=1)
 
 # image input
-parser.add_argument('--rgb-path', default='images/demo_rgb.png')
-parser.add_argument('--depth-path', default='images/demo_depth.png')
+parser.add_argument('--rgb-path', default='resources/demo_rgb.png')
+parser.add_argument('--depth-path', default='resources/demo_depth.png')
 parser.add_argument('--input-h', type=int, default=int(720/2.25)) # height of input image
 parser.add_argument('--input-w', type=int, default=int(1280/2)) # width of input image
 parser.add_argument('--export-onnx', type=bool, default=False) # export .onnx files
@@ -32,9 +32,9 @@ parser.add_argument('--export-onnx', type=bool, default=False) # export .onnx fi
 parser.add_argument('--sigma', type=int, default=10)
 parser.add_argument('--ratio', type=int, default=8) # grasp attributes prediction downsample ratio, must be 2^N
 parser.add_argument('--anchor-k', type=int, default=6) # in-plane rotation anchor number
-parser.add_argument('--anchor-w', type=float, default=50.0/2) # grasp width anchor size
-parser.add_argument('--anchor-z', type=float, default=20.0/2) # grasp depth anchor size
-parser.add_argument('--grid-size', type=int, default=8) # grid size for grid-based center sampling
+parser.add_argument('--anchor-w', type=float, default=50.0/4) # grasp width anchor size
+parser.add_argument('--anchor-z', type=float, default=20.0/4) # grasp depth anchor size
+parser.add_argument('--grid-size', type=int, default=8//2) # grid size for grid-based center sampling
 parser.add_argument('--feature-dim', type=int, default=128) # feature dimension for anchor net
 
 # 6d grasping
@@ -43,8 +43,8 @@ parser.add_argument('--local-k', type=int, default=10) # grasp detection number 
 parser.add_argument('--depth-thres', type=float, default=0.01) # depth threshold for collision detection
 parser.add_argument('--max-points', type=int, default=25600//2) # downsampled max number of points in point cloud
 parser.add_argument('--anchor-num', type=int, default=7) # spatial rotation anchor number
-parser.add_argument('--center-num', type=int, default=64) # sampled local center/region number
-parser.add_argument('--group-num', type=int, default=512) # local region fps number
+parser.add_argument('--center-num', type=int, default=32) # sampled local center/region number
+parser.add_argument('--group-num', type=int, default=512//2) # local region pc number
 
 args = parser.parse_args()
 
@@ -77,8 +77,10 @@ if __name__ == '__main__':
 
     # load checkpoint
     check_point = torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device('cpu'))
-    # anchornet.load_state_dict(check_point['anchor'])
-    # localnet.load_state_dict(check_point['local'])
+    resnet.load_state_dict(check_point['resnet'])
+    anchornet.load_state_dict(check_point['anchornet'])
+    pointnet.load_state_dict(check_point['pointnet'])
+    localnet.load_state_dict(check_point['localnet'])
 
     # load anchors
     basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1)
@@ -257,7 +259,7 @@ if __name__ == '__main__':
                                                 pred,
                                                 offset,
                                                 valid_local_centers,
-                                                (args.input_w//2, args.input_h//2),
+                                                (args.input_w, args.input_h),
                                                 anchors,
                                                 k=args.local_k)
 

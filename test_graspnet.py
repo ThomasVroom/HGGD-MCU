@@ -23,7 +23,7 @@ from models.pointnet import PointNetfeat
 from train_utils import *
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint-path', default='realsense_checkpoint')
+parser.add_argument('--checkpoint-path', default='resources/retrained_checkpoint')
 parser.add_argument('--random-seed', type=int, default=1)
 
 # dataset
@@ -33,7 +33,7 @@ parser.add_argument('--logdir', type=str, default='./logs/') # logging directory
 parser.add_argument('--description', type=str, default='realsense-mcu') # description for logging or checkpointing
 parser.add_argument('--scene-l', type=int, default=100)
 parser.add_argument('--scene-r', type=int, default=101)
-parser.add_argument('--grasp-count', type=int, default=5000)
+parser.add_argument('--grasp-count', type=int, default=5000//2)
 parser.add_argument('--dump-dir', default='./pred/test') # directory to save predictions
 parser.add_argument('--num-workers', type=int, default=4) # number of workers for data loading
 parser.add_argument('--input-h', type=int, default=int(720/2.25)) # height of input images
@@ -43,17 +43,17 @@ parser.add_argument('--input-w', type=int, default=int(1280/2)) # width of input
 parser.add_argument('--sigma', type=int, default=10)
 parser.add_argument('--ratio', type=int, default=8) # grasp attributes prediction downsample ratio, must be 2^N
 parser.add_argument('--anchor-k', type=int, default=6) # in-plane rotation anchor number
-parser.add_argument('--anchor-w', type=float, default=50.0/2) # grasp width anchor size
-parser.add_argument('--anchor-z', type=float, default=20.0/2) # grasp depth anchor size
-parser.add_argument('--grid-size', type=int, default=8) # grid size for grid-based center sampling
+parser.add_argument('--anchor-w', type=float, default=50.0/4) # grasp width anchor size
+parser.add_argument('--anchor-z', type=float, default=20.0/4) # grasp depth anchor size
+parser.add_argument('--grid-size', type=int, default=8//2) # grid size for grid-based center sampling
 parser.add_argument('--feature-dim', type=int, default=128) # feature dimension for anchor net
 
 # 6d grasping
 parser.add_argument('--anchor-num', type=int, default=7) # spatial rotation anchor number
 parser.add_argument('--all-points-num', type=int, default=25600//2) # downsampled max number of points in point cloud
-parser.add_argument('--center-num', type=int, default=64) # sampled local center/region number
-parser.add_argument('--group-num', type=int, default=512) # local region fps number
-parser.add_argument('--local-grasp-num', type=int, default=500) # max. number of local grasps per batch for LocalNet
+parser.add_argument('--center-num', type=int, default=32) # sampled local center/region number
+parser.add_argument('--group-num', type=int, default=512//2) # local region pc number
+parser.add_argument('--local-grasp-num', type=int, default=256) # max. number of local grasps per batch for LocalNet
 parser.add_argument('--heatmap-thres', type=float, default=0.01) # heatmap threshold
 parser.add_argument('--depth-thres', type=float, default=0.01) # depth threshold for collision detection
 parser.add_argument('--local-k', type=int, default=10) # grasp detection number in each local region (localnet)
@@ -101,9 +101,12 @@ def inference():
 
     # load checkpoint
     check_point = torch.load(args.checkpoint_path, weights_only=True, map_location=torch.device('cpu'))
-    #anchornet.load_state_dict(check_point['anchor'])
-    #localnet.load_state_dict(check_point['local'])
-    # load checkpoint
+    resnet.load_state_dict(check_point['resnet'])
+    anchornet.load_state_dict(check_point['anchornet'])
+    pointnet.load_state_dict(check_point['pointnet'])
+    localnet.load_state_dict(check_point['localnet'])
+
+    # load anchors
     basic_ranges = torch.linspace(-1, 1, args.anchor_num + 1)
     if gpu:
         basic_ranges = basic_ranges.cuda()
@@ -125,7 +128,7 @@ def inference():
     time_2d, time_data, time_6d, time_colli, time_nms = 0, 0, 0, 0, 0
 
     batch_idx = -1
-    vis_id = []
+    vis_id = [] # idx to visualize
     with torch.no_grad():
         for anchor_data, rgb, ori_depth, grasppaths in test_data:
             batch_idx += 1
@@ -244,7 +247,7 @@ def inference():
                 pred,
                 offset,
                 valid_local_centers,
-                (args.input_w//2, args.input_h//2),
+                (args.input_w, args.input_h),
                 anchors,
                 k=args.local_k
             )
