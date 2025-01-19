@@ -104,7 +104,7 @@ class GraspNetEval(GraspNet):
     def eval_scene(self,
                    scene_id,
                    dump_folder,
-                   TOP_K=50,
+                   TOP_K=50, # 50 = standardized test setting
                    return_list=True,
                    vis=False,
                    max_width=0.1):
@@ -235,12 +235,11 @@ class GraspNetEval(GraspNet):
             score_list_list.append(score_list)
             collision_list_list.append(collision_mask_list)
 
+            # sort for highest score
+            score_list = np.sort(score_list)[::-1]
             #calculate AP
             print('score list ==', score_list)
-            print('colli ==',
-                  collision_mask_list.sum() / len(collision_mask_list))
-            # sort for highest score
-            # score_list = np.sort(score_list)[::-1]
+            print('colli ==', collision_mask_list.sum() / len(collision_mask_list))
             grasp_accuracy = np.zeros((TOP_K, len(list_coe_of_friction)))
             for fric_idx, fric in enumerate(list_coe_of_friction):
                 for k in range(0, TOP_K):

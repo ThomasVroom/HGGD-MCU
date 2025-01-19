@@ -23,7 +23,7 @@ from models.pointnet import PointNetfeat
 from train_utils import *
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint-path', default='resources/retrained_checkpoint')
+parser.add_argument('--checkpoint-path', default='resources/checkpoint')
 parser.add_argument('--random-seed', type=int, default=1)
 
 # dataset
@@ -51,7 +51,7 @@ parser.add_argument('--feature-dim', type=int, default=128) # feature dimension 
 # 6d grasping
 parser.add_argument('--anchor-num', type=int, default=7) # spatial rotation anchor number
 parser.add_argument('--all-points-num', type=int, default=25600//2) # downsampled max number of points in point cloud
-parser.add_argument('--center-num', type=int, default=32) # sampled local center/region number
+parser.add_argument('--center-num', type=int, default=64) # sampled local center/region number
 parser.add_argument('--group-num', type=int, default=512//2) # local region pc number
 parser.add_argument('--local-grasp-num', type=int, default=256) # max. number of local grasps per batch for LocalNet
 parser.add_argument('--heatmap-thres', type=float, default=0.01) # heatmap threshold
@@ -264,7 +264,7 @@ def inference():
             # collision detect
             pred_grasp_from_rect = pred_rect_gg.to_6d_grasp_group(depth=args.depth_thres)
             pred_gg, valid_mask = collision_detect(points_all, pred_grasp_from_rect, mode='graspnet')
-            # pred_grasp = pred_grasp[valid_mask]
+            pred_grasp = pred_grasp[valid_mask]
 
             # get collision detect
             if batch_idx >= 1:
@@ -331,10 +331,8 @@ def inference():
 
 
 def evaluate():
-    # res = np.load('temp_result.npy')
     ge = GraspNetEval(root=args.scene_path, camera=camera, split=(args.scene_l, args.scene_r))
     res, ap, colli = ge.eval_scene_lr(args.dump_dir, args.scene_l, args.scene_r, proc=args.num_workers)
-    np.save('temp_result.npy', res)
     # get ap 0.8 and ap 0.4
     aps = res.mean(0).mean(0).mean(0)
     logging.info(f'Scene: {args.scene_l} ~ {args.scene_r}')

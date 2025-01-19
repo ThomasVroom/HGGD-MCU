@@ -1,214 +1,111 @@
-### Notes
-I am running with:
-- Windows 10
-- Python 3.9.13
-- CUDA 12.2
-- GCC 8.3.0
+<h1 align="center">
+  <b>HGGD-MCU</b>
+</h1>
 
-1. Make sure you have python, cuda, and gcc installed.
-2. Install the checkpoint as described in the README below.
-3. Create a virtual environment.
-4. Run `install.bat` in the venv (this might take 10-15 minutes).
-5. Run `demo.py`.
-
-Training Logs: `tensorboard --logdir=./logs/`
-
---------------------------------------------
-
-<h2 align="center">
-  <b>Efficient Heatmap-Guided 6-Dof Grasp Detection in Cluttered Scenes</b>
-
-<b><i>RA-L 2023</i></b>
-
-<div align="center">
-    <a href="https://ieeexplore.ieee.org/document/10168242" target="_blank">
-    <img src="https://img.shields.io/badge/ieee-%2300629B.svg?&style=for-the-badge&logo=ieee&logoColor=white"></a>
-    <a href="https://arxiv.org/pdf/2403.18546" target="_blank">
-    <img src="https://img.shields.io/badge/arxiv-%23B31B1B.svg?&style=for-the-badge&logo=arxiv&logoColor=white" alt="Paper arXiv"></a>
-    <a href="https://www.youtube.com/watch?v=V8gG1eHbrsU" target="_blank">
-    <img src="https://img.shields.io/badge/youtube-%23FF0000.svg?&style=for-the-badge&logo=youtube&logoColor=white" alt="Youtube"/></a>
-    <a href="https://www.bilibili.com/video/BV1hH4y1H7qv/" target="_blank">
-    <img src="https://img.shields.io/badge/bilibili-%2300A1D6.svg?&style=for-the-badge&logo=bilibili&logoColor=white" alt="Bilibili"/></a>
-</div>
-</h2>
-
-Official code of paper [Efficient Heatmap-Guided 6-Dof Grasp Detection in Cluttered Scenes](https://ieeexplore.ieee.org/document/10168242)
-
-# Framework
+A microcontroller-compatible version of [Heatmap-Guided 6-DoF Grasp Detection](https://github.com/THU-VCLab/HGGD).
 
 ![framework](./resources/framework.jpg)
 
-# Requirements
+# Installation
 
-- Python >= 3.8
-- PyTorch >= 1.10
-- pytorch3d
-- numpy==1.23.5
-- pandas
-- cupoch
-- numba
-- grasp_nms
-- matplotlib
-- open3d
-- opencv-python
-- scikit-image
-- tensorboardX
-- torchsummary
-- tqdm
-- transforms3d
-- trimesh
-- autolab_core
-- cvxopt
+### Requirements
+- Python 3.9.13 (other versions at own discretion)
+- [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 
-## Installation
-
-This code has been tested on Ubuntu20.04 with Cuda 11.1/11.3/11.6, Python3.8/3.9 and Pytorch 1.11.0/1.12.0.
-
-Get the code.
-
+### Code Installation
+1. Download the code. It is recommended to create a virtual environment.
 ```bash
-git clone https://github.com/THU-VCLab/HGGD.git
+git clone https://github.com/ThomasVroom/HGGD-MCU.git
 ```
-
-Create new Conda environment.
-
+2. Install torch (with relevant CUDA toolkit; below is for python 3.9.13).
 ```bash
-conda create -n hggd python=3.8
-cd HGGD
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 ```
-
-Please install [pytorch](https://pytorch.org/) and [pytorch3d](https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md) manually.
-
+3. Install fvcore and wheel separately.
 ```bash
-# pytorch-1.11.0
-pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
-# pytorch3d
-pip install fvcore
-pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py38_cu113_pyt1110/download.html
+pip install fvcore wheel
 ```
-
-Install other packages via Pip.
-
-```bas
+4. Download the code for [pytorch3d](https://github.com/facebookresearch/pytorch3d).
+```bash
+git clone https://github.com/facebookresearch/pytorch3d.git
+```
+5. Compile pytorch3d (this can take up to 30 minutes).
+```bash
+pip install --no-build-isolation ./pytorch3d
+```
+6. Install the remaining packages.
+```bash
 pip install -r requirements.txt
 ```
 
+### Data Installation
+To run the training / testing scripts, you need the following data:
+- 3D Models: download `models.zip` from the [GraspNet](https://graspnet.net/datasets.html) dataset, unzip into `graspnet/`.
+- Images: download train and test images from the [GraspNet](https://graspnet.net/datasets.html) dataset, unzip into `graspnet/scenes/`.
+- Labels: download `realsense.7z` from [this link](https://cloud.tsinghua.edu.cn/d/e3edfc2c8b114513b7eb/), unzip into `data/`.
+
+Note that it is not necessary to download any of this if you just want to run a forward pass through the model.
+The data is only needed for running the training / testing scripts.
+
+### Model Installation
+TODO
+
 # Usage
 
-## Checkpoint
+### Inference
+`demo.py` performs a single forward pass through the model using the RGBD images and checkpoint in `resources/`.
+The first output of the demo script is the visualization of the heatmap:
 
-Checkpoints (realsense/kinect) can be downloaded from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/e3edfc2c8b114513b7eb/)
+![anchornet](./resources/anchornet.png)
 
-## Preprocessed Dataset
+The top-left of this visualization shows the original RGB image, the top-right shows the original depth image, the bottom-left shows the grasp heatmap, and the bottom-right shows the predicted 2D grasps.
 
-Preprocessed datasets (realsense.7z/kinect.7z) can be downloaded from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/e3edfc2c8b114513b7eb/)
+After closing this visualization, the predicted grasps are converted to 6D grasps and visualized using an interactive pointcloud:
 
-Containing converted and refined grasp poses from each image in graspnet dataset
+![localnet](./resources/localnet.png)
 
-## Train
+The demo script can also be used for exporting the model as a series of optimized [onnx](https://onnx.ai/) files, which can be used to run the model on a microcontroller.
+The hyperparameters of the model are controlled at the top of the file.
 
-Training code has been released, please refer to [training script](./train_graspnet.sh)
+### Testing
+`test_graspnet.py` performs accuracy tests on a subset of the GraspNet dataset using the checkpoint in `resources/`.
+The testing results are saved in `logs/`.
+The hyperparameters of the model and the testing are controlled at the top of the file.
+The `scene-l` and `scene-r` parameters control what subset of the GraspNet data the model is tested on:
 
-Typical hyperparameters:
+<center>
 
-```shell
-batch-size # batch size, default: 4
-step-cnt # step number for gradient accumulation, actual_batch_size = batch_size * step_cnt, default: 2
-lr # learning rate, default: 1e-2
-anchor-num # spatial rotation anchor number, default: 7
-anchor-k # in-plane roation anchor number, default: 6
-anchor-w # grasp width anchor size, default: 50
-anchor-z # grasp depth anchor size, default: 20
-all-points-num # point cloud downsample number, default: 25600
-group-num # local region fps number, default: 512
-center-num # sampled local center/region number, default: 128
-noise # point cloud noise scale, default: 0
-ratio # grasp attributes prediction downsample ratio, default: 8
-grid-size # grid size for our grid-based center sampling, default: 8
-scene-l & scene-r # scene range, train: 0~100, seen: 100~130, similar: 130~160, novel: 160~190
-input-w & input-h # downsampled input image size, should be 640x360
-loc-a & reg-b & cls-c & offset-d # loss multipier, default: 1, 5, 1, 1
-epochs # training epoch number, default: 15
-num-workers # dataloader worker number, default: 4
-save-freq # checkpoint saving frequency, default: 1
-optim # optimizer, default: 'adamw'
-dataset-path # our preprocessed dataset path (read grasp poses)
-scene-path  # original graspnet dataset path (read images)
-joint-trainning # whether to joint train our two part of network (trainning is a typo, should be training, please ignore it)
-```
+| GraspNet | `scene-l` | `scene-r` |
+|----------|-----------|-----------|
+| Seen     | 100       | 130       |
+| Similar  | 130       | 160       |
+| Novel    | 160       | 190       |
 
-## Test
+</center>
 
-Download and unzip our preprocessed datasets (for convenience), you can also try removing unnecessary parts in our test code and directly reading images from the original graspnet dataset api.
+If you want to visualize some test cases (similarly to the demo script), you can add the index to the `vis_id` array in line 131.
 
-Run test code (read rgb and depth image from graspnet dataset and eval grasps).
-
+### Training
+`train_graspnet.py` performs the training of a model on a subset of the GraspNet dataset.
+A log of the training can be accessed using [TensorBoard](https://www.tensorflow.org/tensorboard):
 ```bash
-bash test_graspnet.sh
+tensorboard --logdir=./logs/
 ```
 
-Attention: if you want to change camera, please remember to change `camera` in [config.py](./dataset/config.py)
+The model is trained end-to-end, and the checkpoint(s) are also saved to the `logs/` directory.
 
-Typical hyperparameters:
+# Changelog
+Several changes have been made to the original HGGD model to make it compatible with microcontrollers.
+The following list provides an overview of the most relevant changes made:
+TODO
 
-```python
-center-num # sampled local center/region number, higher number means more regions&grasps, but gets slower speed, default: 48
-grid-size # grid size for our grid-based center sampling, higher number means sparser centers, default: 8
-ratio # grasp attributes prediction downsample ratio, default: 8
-anchor-k # classification anchor number for grasp in-plane rotation, default: 6
-anchor-w # regress anchor size for grasp width, default: 50
-anchor-z # regress anchor size for grasp depth, default: 20
-all-points-num # downsampled point cloud point number, default: 25600
-group-num # local region point cloud point number, default: 512
-local-k # grasp detection number in each local region, default: 10
-scene-l & scene-r # scene range, train: 0~100, seen: 100~130, similar: 130~160, novel: 160~190
-input-h & input-w # downsampled input image size, should be 640x360
-local-thres & heatmap-thres # heatmap and grasp score filter threshold, set to 0.01 in our settings
-dataset-path # our preprocessed dataset path (read grasp poses)
-scene-path # original graspnet dataset path (read images)
-num-workers # eval worker number
-dump-dir # detected grasp poses dumped path (used in later evaluation)
-```
+# Microcontrollers
+TODO
 
-## Demo
+# License
 
-Run demo code (read rgb and depth image from file and get grasps).
-
-```bash
-bash demo.sh
-```
-
-Typical hyperparameters:
-
-```python
-center-num # sampled local center/region number, higher number means more regions&grasps, but gets slower speed, default: 48
-grid-size # grid size for our grid-based center sampling, higher number means sparser centers, default: 8
-all-points-num # downsampled point cloud point number, default: 25600
-group-num # local region point cloud point number, default: 512
-local-k # grasp detection number in each local region, default: 10
-```
-
-## Results
-
-Attention: HGGD detects grasps only from heatmap guidance, without any workspace mask (adopted in [Graspness](https://github.com/rhett-chen/graspness_implementation)) or object/foreground segmentation method (adopted in [Scale-balanced Grasp](https://github.com/mahaoxiang822/scale-balanced-grasp)). It may be useful to add some of this prior information to get better results.
-
-Evaluation results on RealSense camera:
-
-|          | Seen  | Similar | Novel |
-| :------: | :---: | :-----: | :---: |
-| In paper | 59.36 |  51.20  | 22.17 |
-| In repo  | 64.45 |  53.59  | 24.59 |
-
-Evaluation results on Kinect camera:
-
-|          | Seen  | Similar | Novel |
-| :------: | :---: | :-----: | :---: |
-| In paper | 60.26 |  48.59  | 18.43 |
-| In repo  | 61.17 |  47.02  | 19.37 |
-
-# Citation
-
-Please cite our paper in your publications if it helps your research:
+This repository is a fork of the original [HGGD](https://github.com/THU-VCLab/HGGD) implementation.
+Their paper can be cited as follows:
 
 ```
 @article{chen2023efficient,

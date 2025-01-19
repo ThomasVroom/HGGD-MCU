@@ -18,7 +18,7 @@ from models.localgraspnet import PointMultiGraspNet
 from models.pointnet import PointNetfeat
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint-path', default='resources/retrained_checkpoint')
+parser.add_argument('--checkpoint-path', default='resources/checkpoint')
 parser.add_argument('--random-seed', type=int, default=1)
 
 # image input
@@ -43,7 +43,7 @@ parser.add_argument('--local-k', type=int, default=10) # grasp detection number 
 parser.add_argument('--depth-thres', type=float, default=0.01) # depth threshold for collision detection
 parser.add_argument('--max-points', type=int, default=25600//2) # downsampled max number of points in point cloud
 parser.add_argument('--anchor-num', type=int, default=7) # spatial rotation anchor number
-parser.add_argument('--center-num', type=int, default=32) # sampled local center/region number
+parser.add_argument('--center-num', type=int, default=64) # sampled local center/region number
 parser.add_argument('--group-num', type=int, default=512//2) # local region pc number
 
 args = parser.parse_args()
